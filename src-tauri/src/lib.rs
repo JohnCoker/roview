@@ -150,7 +150,7 @@ pub fn run() {
                     if arg.starts_with('-') {
                         continue;
                     }
-                    if let Ok(url) = url::Url::parse(&arg) {
+                    if let Ok(url) = tauri::Url::parse(&arg) {
                         if url.scheme() == "file" {
                             if let Ok(path) = url.to_file_path() {
                                 files.push(path);
