@@ -3,6 +3,9 @@
   "private": true,
   "version": "0.1.0",
   "type": "module",
+  "description": "RASOrbit Viewer: Tauri/React desktop app for exploring RASOrbit time-series CSV output.",
+  "author": "John Coker <john@jcsw.com>",
+  "license": "ISC",
   "scripts": {
     "dev": "vite",
     "build": "tsc && vite build",

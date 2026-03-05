@@ -4,6 +4,7 @@ import { listen } from "@tauri-apps/api/event";
 import { open as openDialog, message as showDialogMessage } from "@tauri-apps/plugin-dialog";
 import { readTextFile } from "@tauri-apps/plugin-fs";
 import { RunFile, Problem } from "./RunFile";
+import { LoadedFileView } from "./LoadedFileView";
 import "./App.css";
 
 function App() {
@@ -12,6 +13,7 @@ function App() {
   const [loadError, setLoadError] = useState<string | null>(null);
   const [problems, setProblems] = useState<Problem[] | null>(null);
   const [showWarnings, setShowWarnings] = useState(true);
+  const [selectedColumns, setSelectedColumns] = useState<string[]>([]);
 
   useEffect(() => {
     invoke<string[]>("get_pending_open_files").then((paths) => {
@@ -58,12 +60,18 @@ function App() {
 
         setRunFile(run);
       })
-      .catch((err) => {
+      .catch((err: unknown) => {
         setRunFile(null);
         setProblems(null);
         setLoadError(err instanceof Error ? err.message : String(err));
       });
   }, [currentFilePath]);
+
+  useEffect(() => {
+    if (!runFile) return;
+    const dataCols = runFile.dataColumns();
+    setSelectedColumns(dataCols.slice(0, 3).map((c) => c.name));
+  }, [runFile?.path]);
 
   useEffect(() => {
     const unlistenOpenDialog = listen("menu-open-dialog", async () => {
@@ -104,45 +112,24 @@ function App() {
     };
   }, []);
 
+  const isEmpty = !currentFilePath;
+
   return (
-    <main className="container">
-      <h1>RASOrbit Viewer</h1>
-      {currentFilePath ? (
-        <>
-          <p className="current-file">Current file: {currentFilePath}</p>
-          {loadError && <p className="load-error">{loadError}</p>}
-          {problems && showWarnings && problems.some((p) => p.severity === "warning") && (
-            <div className="warning-banner">
-              <button
-                type="button"
-                className="warning-banner-close"
-                onClick={() => setShowWarnings(false)}
-                aria-label="Dismiss warnings"
-              >
-                ×
-              </button>
-              <div className="warning-banner-content">
-                <strong>Warnings for this file:</strong>
-                <ul>
-                  {problems
-                    .filter((p) => p.severity === "warning")
-                    .map((p, idx) => (
-                      <li key={idx}>{p.message}</li>
-                    ))}
-                </ul>
-              </div>
-            </div>
-          )}
-          {runFile && (
-            <p>
-              Loaded {runFile.rowCount} rows, {runFile.columns.length} columns:{" "}
-              {runFile.columns.map((c) => c.name).join(", ")}
-            </p>
-          )}
-        </>
-      ) : (
+    <main className={`container ${isEmpty ? "container--empty" : ""}`}>
+      {isEmpty ? (
         <p>Use File → Open… or open a CSV via the system.</p>
-      )}
+      ) : loadError ? (
+        <p className="load-error">{loadError}</p>
+      ) : runFile ? (
+        <LoadedFileView
+          runFile={runFile}
+          problems={problems}
+          showWarnings={showWarnings}
+          setShowWarnings={setShowWarnings}
+          selectedColumns={selectedColumns}
+          onSelectionChange={setSelectedColumns}
+        />
+      ) : null}
     </main>
   );
 }
