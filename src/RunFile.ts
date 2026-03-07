@@ -1,4 +1,5 @@
 import { inferSchema, initParser } from "udsv";
+import { formatVal, range } from "./util";
 
 /**
  * One row of numeric CSV data.
@@ -66,6 +67,10 @@ export class Col {
   unit(): string | undefined {
     const { unit } = this.#parseName();
     return unit;
+  }
+
+  format(v: number | undefined): string {
+    return formatVal(v);
   }
 
   #parseName(): { kind: string; unit?: string } {
@@ -235,17 +240,6 @@ export class RunFile {
 
     return problems;
   }
-}
-
-function range(values: (number | null)[]): number {
-  let min: number | null = null;
-  let max: number | null = null;
-  values.forEach(v => {
-    if (v == null) return;
-    if (min == null || v < min) min = v;
-    if (max == null || v > max) max = v;
-  });
-  return min != null && max != null ? max - min : 0;
 }
 
 function toNumericRow(raw: Record<string, unknown>, columns: string[]): Row {

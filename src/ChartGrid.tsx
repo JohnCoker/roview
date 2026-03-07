@@ -1,5 +1,9 @@
+import { useRef } from "react";
 import ReactECharts from "echarts-for-react";
+import { connect } from "echarts";
+import type { ECharts } from "echarts";
 import type { RunFile } from "./RunFile";
+import { formatVal } from "./util";
 
 export interface ChartGridProps {
   runFile: RunFile;
@@ -7,6 +11,9 @@ export interface ChartGridProps {
 }
 
 export function ChartGrid({ runFile, selectedColumnNames }: ChartGridProps) {
+  const chartRefs = useRef<ECharts[]>([]);
+  const prevSelectionRef = useRef<string[]>([]);
+
   const timeCol = runFile.timeColumn();
   if (!timeCol || selectedColumnNames.length === 0) {
     return (
@@ -14,10 +21,26 @@ export function ChartGrid({ runFile, selectedColumnNames }: ChartGridProps) {
     );
   }
 
+  // Reset collected instances when the set of charts changes
+  const selectionChanged =
+    prevSelectionRef.current.length !== selectedColumnNames.length ||
+    prevSelectionRef.current.some((n, i) => n !== selectedColumnNames[i]);
+  if (selectionChanged) {
+    prevSelectionRef.current = [...selectedColumnNames];
+    chartRefs.current = [];
+  }
+
+  const handleChartReady = (chart: ECharts) => {
+    chartRefs.current.push(chart);
+    if (chartRefs.current.length === selectedColumnNames.length) {
+      connect(chartRefs.current);
+    }
+  };
+
   const timeValues = runFile.getColumnValues(timeCol.name) as (number | null)[];
 
   return (
-    <div className="chart-grid">
+    <div className="chart-grid" key={selectedColumnNames.join(",")}>
       {selectedColumnNames.map((colName) => {
         const col = runFile.getColumn(colName);
         if (!col) return null;
@@ -42,9 +65,6 @@ export function ChartGrid({ runFile, selectedColumnNames }: ChartGridProps) {
               const value = Array.isArray(p?.value) ? p.value : [p?.value, null];
               const time = value[0] as number | null | undefined;
               const y = value[1] as number | null | undefined;
-
-              const formatVal = (v: number | null | undefined) =>
-                v == null || Number.isNaN(v) ? "—" : `${v}`;
 
               const timeLabel = `${timeKind}: ${formatVal(time)}${
                 timeUnit ? ` ${timeUnit}` : ""
@@ -95,6 +115,7 @@ export function ChartGrid({ runFile, selectedColumnNames }: ChartGridProps) {
             <ReactECharts
               option={option}
               style={{ width: "100%", aspectRatio: "3/2", minHeight: 200 }}
+              onChartReady={handleChartReady}
             />
           </div>
         );
