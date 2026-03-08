@@ -181,6 +181,87 @@ body {
   gap: 0.5rem;
 }
 
+/* Export charts dialog */
+.export-charts-dialog {
+  max-width: 90vw;
+  width: 420px;
+  padding: 0;
+  border-radius: 8px;
+  border: 1px solid #ccc;
+}
+
+.export-charts-dialog::backdrop {
+  background: rgba(0, 0, 0, 0.4);
+}
+
+.export-charts-dialog-content {
+  display: flex;
+  flex-direction: column;
+}
+
+.export-charts-dialog-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 1rem 1rem 0;
+}
+
+.export-charts-dialog-header h2 {
+  margin: 0;
+  font-size: 1.1rem;
+}
+
+.export-charts-dialog-close {
+  padding: 0.2em 0.5em;
+  font-size: 1.25rem;
+  line-height: 1;
+}
+
+.export-charts-dialog-body {
+  padding: 1rem;
+}
+
+.export-charts-dialog-field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  margin-bottom: 1rem;
+}
+
+.export-charts-dialog-field label {
+  font-weight: 500;
+}
+
+.export-charts-dialog-field select,
+.export-charts-dialog-field input {
+  max-width: 100%;
+  padding: 0.35em 0.5em;
+}
+
+.export-charts-dialog-hint {
+  font-size: 0.85rem;
+  color: #666;
+}
+
+.export-charts-dialog-count {
+  margin: 0 0 1rem;
+  font-size: 0.9rem;
+  opacity: 0.9;
+}
+
+.export-charts-dialog-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 1rem;
+  border-top: 1px solid #eee;
+}
+
+.export-charts-dialog-actions button:first-child {
+  margin-right: 0.5rem;
+}
+
 /* Chart grid – content area with white background, only this area scrolls */
 .chart-grid-scroll {
   flex: 1;
@@ -195,6 +276,39 @@ body {
   display: flex;
   flex-direction: column;
   gap: 1rem;
+}
+
+.chart-context-menu-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 99999;
+  cursor: default;
+}
+
+.chart-context-menu {
+  position: fixed;
+  z-index: 100000;
+  min-width: 160px;
+  padding: 0.25rem 0;
+  background: #fff;
+  border: 1px solid #ccc;
+  border-radius: 6px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+}
+
+.chart-context-menu button {
+  display: block;
+  width: 100%;
+  padding: 0.4rem 1rem;
+  text-align: left;
+  border: none;
+  background: none;
+  font: inherit;
+  cursor: pointer;
+}
+
+.chart-context-menu button:hover {
+  background: #eee;
 }
 
 .chart-grid-item {
@@ -227,16 +341,31 @@ body {
     border-color: #8a7a0a;
   }
 
-  .column-select-dialog {
+  .column-select-dialog,
+  .export-charts-dialog {
     border-color: #555;
   }
 
-  .column-select-dialog-actions {
+  .column-select-dialog-actions,
+  .export-charts-dialog-actions {
     border-top-color: #444;
   }
 
   .column-select-dialog-row:hover {
     background: rgba(255, 255, 255, 0.08);
+  }
+
+  .export-charts-dialog-hint {
+    color: #999;
+  }
+
+  .chart-context-menu {
+    background: #2f2f2f;
+    border-color: #555;
+  }
+
+  .chart-context-menu button:hover {
+    background: rgba(255, 255, 255, 0.1);
   }
 
   .column-selector {

@@ -1,6 +1,10 @@
+import { useEffect, useRef, useState } from "react";
+import { invoke } from "@tauri-apps/api/core";
+import { listen } from "@tauri-apps/api/event";
 import type { RunFile, Problem } from "./RunFile";
 import { ColumnSelector } from "./ColumnSelector";
-import { ChartGrid } from "./ChartGrid";
+import { ChartGrid, type ChartGridRef } from "./ChartGrid";
+import { ExportChartsDialog } from "./ExportChartsDialog";
 
 export interface LoadedFileViewProps {
   runFile: RunFile;
@@ -20,6 +24,25 @@ export function LoadedFileView({
   onSelectionChange,
 }: LoadedFileViewProps) {
   const dataColumns = runFile.dataColumns();
+  const [showExportDialog, setShowExportDialog] = useState(false);
+  const chartGridRef = useRef<ChartGridRef>(null);
+
+  useEffect(() => {
+    const unlisten = listen("menu-export-charts", () => {
+      setShowExportDialog(true);
+    });
+    return () => {
+      unlisten.then((fn) => fn());
+    };
+  }, []);
+
+  useEffect(() => {
+    const enabled = selectedColumns.length > 0;
+    invoke("set_export_charts_enabled", { enabled }).catch(() => {});
+    return () => {
+      invoke("set_export_charts_enabled", { enabled: false }).catch(() => {});
+    };
+  }, [selectedColumns.length]);
 
   return (
     <>
@@ -49,8 +72,18 @@ export function LoadedFileView({
         onSelectionChange={onSelectionChange}
       />
       <div className="chart-grid-scroll">
-        <ChartGrid runFile={runFile} selectedColumnNames={selectedColumns} />
+        <ChartGrid
+          ref={chartGridRef}
+          runFile={runFile}
+          selectedColumnNames={selectedColumns}
+        />
       </div>
+      <ExportChartsDialog
+        open={showExportDialog}
+        onClose={() => setShowExportDialog(false)}
+        getChartInstances={() => chartGridRef.current?.getChartInstances() ?? []}
+        chartNames={selectedColumns}
+      />
     </>
   );
 }

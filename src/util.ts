@@ -27,6 +27,54 @@ export function formatVal(v: number | null | undefined): string {
 }
 
 /**
+ * Sanitize a string for use as a filename (e.g. column names like "Inerti-Vel (ft/sec)").
+ */
+export function sanitizeFileName(name: string, dflt: string): string {
+  const s = name.trim().replace(/[/\\:*?"<>|]+/g, "_");
+  return s === "" ? dflt : s;
+}
+
+/** File extension for export format (JPEG uses "jpg"). */
+export const EXPORT_EXT: Record<"png" | "jpeg", string> = {
+  png: "png",
+  jpeg: "jpg",
+};
+
+/** Dialog filter label per export format (e.g. save dialog). */
+export const EXPORT_FORMAT_LABEL: Record<"png" | "jpeg", string> = {
+  png: "PNG image",
+  jpeg: "JPEG image",
+};
+
+/** Convert unknown throw value to a short message for user-facing errors. */
+export function errorMessage(e: unknown): string {
+  return e instanceof Error ? e.message : String(e);
+}
+
+/** Options for ECharts getDataURL() when exporting charts. */
+export const CHART_EXPORT_DATA_URL_OPTS = {
+  pixelRatio: 2,
+  backgroundColor: "#fff",
+} as const;
+
+/**
+ * Decode a PNG/JPEG data URL to bytes, or null if invalid.
+ */
+export function dataUrlToBytes(dataUrl: string): Uint8Array | null {
+  if (dataUrl == null || typeof dataUrl !== "string" || !dataUrl) return null;
+  const match = dataUrl.match(/^data:image\/(?:png|jpeg);base64,(.+)$/);
+  if (!match) return null;
+  try {
+    const binary = atob(match[1]);
+    const bytes = new Uint8Array(binary.length);
+    for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+    return bytes;
+  } catch {
+    return null;
+  }
+}
+
+/**
  * Return the range (max - min) of non-null values, or 0 if none.
  */
 export function range(values: (number | null)[]): number {

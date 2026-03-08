@@ -1,18 +1,61 @@
-import { useRef } from "react";
+import { forwardRef, useImperativeHandle, useRef, useState, useEffect } from "react";
 import ReactECharts from "echarts-for-react";
 import { connect } from "echarts";
 import type { ECharts } from "echarts";
+import { save as saveDialog, message as showMessage } from "@tauri-apps/plugin-dialog";
+import { writeFile } from "@tauri-apps/plugin-fs";
 import type { RunFile } from "./RunFile";
-import { formatVal } from "./util";
+import {
+  formatVal,
+  sanitizeFileName,
+  dataUrlToBytes,
+  errorMessage,
+  EXPORT_EXT,
+  EXPORT_FORMAT_LABEL,
+  CHART_EXPORT_DATA_URL_OPTS,
+} from "./util";
 
 export interface ChartGridProps {
   runFile: RunFile;
   selectedColumnNames: string[];
 }
 
-export function ChartGrid({ runFile, selectedColumnNames }: ChartGridProps) {
+export interface ChartGridRef {
+  getChartInstances(): ECharts[];
+}
+
+type ReactEChartsRef = { getEchartsInstance: () => ECharts };
+
+export const ChartGrid = forwardRef<ChartGridRef, ChartGridProps>(
+  function ChartGrid({ runFile, selectedColumnNames }, ref) {
   const chartRefs = useRef<ECharts[]>([]);
+  const reactEChartsRefs = useRef<ReactEChartsRef[]>([]);
   const prevSelectionRef = useRef<string[]>([]);
+
+  useImperativeHandle(ref, () => ({
+    getChartInstances() {
+      return reactEChartsRefs.current
+        .map((r) => r.getEchartsInstance())
+        .filter((inst): inst is ECharts => inst != null);
+    },
+  }));
+
+  const [contextMenu, setContextMenu] = useState<{
+    x: number;
+    y: number;
+    chartIndex: number;
+  } | null>(null);
+
+  useEffect(() => {
+    if (!contextMenu) return;
+    const close = () => setContextMenu(null);
+    const onMouseDown = (e: MouseEvent) => {
+      const target = e.target as Node;
+      if (!document.querySelector(".chart-context-menu")?.contains(target)) close();
+    };
+    window.addEventListener("mousedown", onMouseDown);
+    return () => window.removeEventListener("mousedown", onMouseDown);
+  }, [contextMenu]);
 
   const timeCol = runFile.timeColumn();
   if (!timeCol || selectedColumnNames.length === 0) {
@@ -28,7 +71,52 @@ export function ChartGrid({ runFile, selectedColumnNames }: ChartGridProps) {
   if (selectionChanged) {
     prevSelectionRef.current = [...selectedColumnNames];
     chartRefs.current = [];
+    reactEChartsRefs.current = [];
   }
+
+  const setReactEChartsRef = (el: ReactEChartsRef | null) => {
+    if (el) {
+      reactEChartsRefs.current.push(el);
+    }
+  };
+
+  const exportSingleChart = async (chartIndex: number, format: "png" | "jpeg") => {
+    setContextMenu(null);
+    const ref = reactEChartsRefs.current[chartIndex];
+    const colName = selectedColumnNames[chartIndex];
+    if (!ref || !colName) return;
+    const chart = ref.getEchartsInstance();
+    if (!chart) return;
+    let dataUrl: string;
+    try {
+      dataUrl = chart.getDataURL({ type: format, ...CHART_EXPORT_DATA_URL_OPTS });
+    } catch (e) {
+      await showMessage(errorMessage(e), { title: "Export error", kind: "error" });
+      return;
+    }
+    if (dataUrl == null || typeof dataUrl !== "string") {
+      await showMessage("Chart returned no image data.", { title: "Export error", kind: "error" });
+      return;
+    }
+    const ext = EXPORT_EXT[format];
+    const defaultName = `${sanitizeFileName(colName, "chart")}.${ext}`;
+    const path = await saveDialog({
+      filters: [{ name: EXPORT_FORMAT_LABEL[format], extensions: [ext] }],
+      defaultPath: defaultName,
+    });
+    if (path == null) return;
+    const bytes = dataUrlToBytes(dataUrl);
+    if (!bytes) {
+      await showMessage("Could not decode chart image.", { title: "Export error", kind: "error" });
+      return;
+    }
+    try {
+      await writeFile(path, bytes);
+      await showMessage("Chart exported.", { title: "Export complete", kind: "info" });
+    } catch (e) {
+      await showMessage(errorMessage(e), { title: "Export error", kind: "error" });
+    }
+  };
 
   const handleChartReady = (chart: ECharts) => {
     chartRefs.current.push(chart);
@@ -41,7 +129,36 @@ export function ChartGrid({ runFile, selectedColumnNames }: ChartGridProps) {
 
   return (
     <div className="chart-grid" key={selectedColumnNames.join(",")}>
-      {selectedColumnNames.map((colName) => {
+      {contextMenu != null && (
+        <>
+          <div
+            className="chart-context-menu-overlay"
+            aria-hidden
+            onClick={() => setContextMenu(null)}
+          />
+          <div
+            className="chart-context-menu"
+            style={{ left: contextMenu.x, top: contextMenu.y }}
+            role="menu"
+          >
+            <button
+            type="button"
+            role="menuitem"
+            onClick={() => exportSingleChart(contextMenu.chartIndex, "png")}
+          >
+            Export as PNG…
+          </button>
+          <button
+            type="button"
+            role="menuitem"
+            onClick={() => exportSingleChart(contextMenu.chartIndex, "jpeg")}
+          >
+            Export as JPEG…
+          </button>
+          </div>
+        </>
+      )}
+      {selectedColumnNames.map((colName, index) => {
         const col = runFile.getColumn(colName);
         if (!col) return null;
         const yValues = runFile.getColumnValues(col.name);
@@ -111,8 +228,16 @@ export function ChartGrid({ runFile, selectedColumnNames }: ChartGridProps) {
         };
 
         return (
-          <div key={col.name} className="chart-grid-item">
+          <div
+            key={col.name}
+            className="chart-grid-item"
+            onContextMenu={(e) => {
+              e.preventDefault();
+              setContextMenu({ x: e.clientX, y: e.clientY, chartIndex: index });
+            }}
+          >
             <ReactECharts
+              ref={setReactEChartsRef}
               option={option}
               style={{ width: "100%", aspectRatio: "3/2", minHeight: 200 }}
               onChartReady={handleChartReady}
@@ -122,4 +247,4 @@ export function ChartGrid({ runFile, selectedColumnNames }: ChartGridProps) {
       })}
     </div>
   );
-}
+});
