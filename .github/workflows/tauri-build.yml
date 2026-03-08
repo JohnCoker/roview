@@ -8,6 +8,8 @@ on:
 
 jobs:
   build:
+    permissions:
+      contents: write   # required for tauri-action to create/update releases and upload assets
     strategy:
       fail-fast: false
       matrix:
@@ -62,11 +64,12 @@ jobs:
       - name: Install frontend dependencies
         run: npm install
 
-      - name: Build Tauri app
+      # macOS/Linux: tauri-action builds and uploads to release (expects bundle output)
+      - name: Build Tauri app (macOS/Linux)
+        if: matrix.platform != 'windows-latest'
         uses: tauri-apps/tauri-action@v0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          # Only provide Apple credentials if on macOS AND it's a tag build
           APPLE_CERTIFICATE: ${{ (matrix.platform == 'macos-latest' && startsWith(github.ref, 'refs/tags/')) && secrets.APPLE_CERTIFICATE || '' }}
           APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
           APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
@@ -74,15 +77,30 @@ jobs:
           APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
         with:
-          tagName: v__VERSION__ # Uses version from src-tauri/tauri.conf.json
+          tagName: v__VERSION__
           releaseName: "Release v__VERSION__"
           releaseDraft: true
           prerelease: false
+          args: ${{ matrix.platform == 'macos-latest' && '--bundles app' || '--bundles appimage' }}
 
+      # Windows: tauri-action only looks for msi/nsis; we want the raw .exe so build and upload manually
+      - name: Build Tauri app (Windows)
+        if: matrix.platform == 'windows-latest'
+        run: npm run tauri build -- --no-bundle
+
+      - name: Upload Windows exe to release
+        if: matrix.platform == 'windows-latest' && startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.ref_name }}
+          files: |
+            src-tauri/target/release/roview.exe
+          draft: true
+          fail_on_unmatched_files: true
+
+      # Windows puts output in target/release/; macOS/Linux use target/release/bundle/
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: roview-${{ matrix.platform }}
-          path: |
-            src-tauri/target/release/bundle/**/*
-
+          name: roview-${{ matrix.platform == 'macos-latest' && 'macos' || (matrix.platform == 'windows-latest' && 'windows' || 'linux') }}
+          path: ${{ matrix.platform == 'windows-latest' && 'src-tauri/target/release' || 'src-tauri/target/release/bundle' }}
