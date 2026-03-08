@@ -64,14 +64,22 @@ jobs:
       - name: Install frontend dependencies
         run: npm install
 
+      # Import Apple cert with a dedicated action (avoids SecKeychainItemImport "parameters not valid" from tauri-action's import)
+      - name: Import Apple code signing certificate (macOS, tag builds)
+        if: matrix.platform == 'macos-latest' && startsWith(github.ref, 'refs/tags/')
+        uses: apple-actions/import-codesign-certs@v3
+        with:
+          p12-file-base64: ${{ secrets.APPLE_CERTIFICATE }}
+          p12-password: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+
       # macOS/Linux: tauri-action builds and uploads to release (expects bundle output)
+      # Do NOT set APPLE_CERTIFICATE / APPLE_CERTIFICATE_PASSWORD here — cert is already in keychain from the step above.
+      # If they are set (even empty), Tauri's bundler runs "security import" and hits SecKeychainItemImport errors.
       - name: Build Tauri app (macOS/Linux)
         if: matrix.platform != 'windows-latest'
         uses: tauri-apps/tauri-action@v0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          APPLE_CERTIFICATE: ${{ (matrix.platform == 'macos-latest' && startsWith(github.ref, 'refs/tags/')) && secrets.APPLE_CERTIFICATE || '' }}
-          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
           APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
           APPLE_ID: ${{ secrets.APPLE_ID }}
           APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
@@ -81,7 +89,8 @@ jobs:
           releaseName: "Release v__VERSION__"
           releaseDraft: true
           prerelease: false
-          args: ${{ matrix.platform == 'macos-latest' && '--bundles app' || '--bundles appimage' }}
+          # macOS non-tag: build without signing so CI works without cert
+          args: ${{ matrix.platform == 'macos-latest' && (startsWith(github.ref, 'refs/tags/') && '--bundles app' || '--bundles app --no-sign') || '--bundles appimage' }}
 
       # Windows: tauri-action only looks for msi/nsis; we want the raw .exe so build and upload manually
       - name: Build Tauri app (Windows)
