@@ -14,6 +14,7 @@ pub struct AppState {
     pub recent_files: RwLock<Vec<PathBuf>>,
     pub pending_open_files: RwLock<Vec<PathBuf>>,
     pub export_charts_enabled: RwLock<bool>,
+    pub view_columns_enabled: RwLock<bool>,
 }
 
 fn build_file_submenu(
@@ -64,6 +65,25 @@ fn build_file_submenu(
 
 fn build_app_menu(handle: &tauri::AppHandle, state: &AppState) -> tauri::Result<Menu<tauri::Wry>> {
     let file_submenu = build_file_submenu(handle, state)?;
+
+    let view_enabled = state
+        .view_columns_enabled
+        .read()
+        .map(|g| *g)
+        .unwrap_or(false);
+    let first_three_item =
+        MenuItemBuilder::with_id("view-first-3-columns", "First 3 Columns").enabled(view_enabled).build(handle)?;
+    let all_columns_item =
+        MenuItemBuilder::with_id("view-all-columns", "All Columns").enabled(view_enabled).build(handle)?;
+    let select_columns_item =
+        MenuItemBuilder::with_id("view-select-columns", "Select Columns…").enabled(view_enabled).build(handle)?;
+
+    let view_submenu = SubmenuBuilder::with_id(handle, "view", "View")
+        .item(&first_three_item)
+        .item(&all_columns_item)
+        .item(&select_columns_item)
+        .build()?;
+
     if cfg!(target_os = "macos") {
         let app_submenu = SubmenuBuilder::with_id(handle, "app", "RASOrbit Viewer")
             .quit_with_text("Quit RASOrbit Viewer")
@@ -71,9 +91,13 @@ fn build_app_menu(handle: &tauri::AppHandle, state: &AppState) -> tauri::Result<
         MenuBuilder::new(handle)
             .item(&app_submenu)
             .item(&file_submenu)
+            .item(&view_submenu)
             .build()
     } else {
-        MenuBuilder::new(handle).item(&file_submenu).build()
+        MenuBuilder::new(handle)
+            .item(&file_submenu)
+            .item(&view_submenu)
+            .build()
     }
 }
 
@@ -133,6 +157,23 @@ fn set_export_charts_enabled(
 }
 
 #[tauri::command]
+fn set_view_columns_enabled(
+    enabled: bool,
+    app: tauri::AppHandle,
+    state: tauri::State<Arc<AppState>>,
+) -> Result<(), String> {
+    state
+        .view_columns_enabled
+        .write()
+        .map(|mut g| *g = enabled)
+        .map_err(|e| e.to_string())?;
+    if let Ok(menu) = build_app_menu(&app, &state) {
+        let _ = app.set_menu(menu);
+    }
+    Ok(())
+}
+
+#[tauri::command]
 fn add_recent(
     path: String,
     app: tauri::AppHandle,
@@ -174,6 +215,7 @@ pub fn run() {
             get_pending_open_files,
             add_recent,
             set_export_charts_enabled,
+            set_view_columns_enabled,
         ])
         .setup(move |app| {
             // Load persistent recents into state
@@ -261,6 +303,24 @@ pub fn run() {
                 if id == "file-export-charts" {
                     if let Some(w) = app_handle.get_webview_window("main") {
                         let _ = w.emit("menu-export-charts", ());
+                    }
+                    return;
+                }
+                if id == "view-first-3-columns" {
+                    if let Some(w) = app_handle.get_webview_window("main") {
+                        let _ = w.emit("view-first-3-columns", ());
+                    }
+                    return;
+                }
+                if id == "view-all-columns" {
+                    if let Some(w) = app_handle.get_webview_window("main") {
+                        let _ = w.emit("view-all-columns", ());
+                    }
+                    return;
+                }
+                if id == "view-select-columns" {
+                    if let Some(w) = app_handle.get_webview_window("main") {
+                        let _ = w.emit("view-select-columns", ());
                     }
                     return;
                 }

@@ -51,7 +51,7 @@ export function ColumnSelectDialog({
     <dialog className="column-select-dialog" open={open}>
       <div className="column-select-dialog-content">
         <div className="column-select-dialog-header">
-          <h2>Select columns to chart</h2>
+          <h2>Columns to Chart</h2>
           <button type="button" className="column-select-dialog-close" onClick={onClose} aria-label="Close">
             &times;
           </button>

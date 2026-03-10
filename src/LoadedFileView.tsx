@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import type { RunFile, Problem } from "./RunFile";
-import { ColumnSelector } from "./ColumnSelector";
+import { ColumnSelectDialog } from "./ColumnSelectDialog";
 import { ChartGrid, type ChartGridRef } from "./ChartGrid";
 import { ExportChartsDialog } from "./ExportChartsDialog";
 
@@ -26,6 +26,7 @@ export function LoadedFileView({
   const dataColumns = runFile.dataColumns();
   const [showExportDialog, setShowExportDialog] = useState(false);
   const chartGridRef = useRef<ChartGridRef>(null);
+  const [columnDialogOpen, setColumnDialogOpen] = useState(false);
 
   useEffect(() => {
     const unlisten = listen("menu-export-charts", () => {
@@ -43,6 +44,25 @@ export function LoadedFileView({
       invoke("set_export_charts_enabled", { enabled: false }).catch(() => {});
     };
   }, [selectedColumns.length]);
+
+  useEffect(() => {
+    const unlistenFirst3 = listen("view-first-3-columns", () => {
+      const next = dataColumns.slice(0, 3).map((c) => c.name);
+      onSelectionChange(next);
+    });
+    const unlistenAll = listen("view-all-columns", () => {
+      const next = dataColumns.map((c) => c.name);
+      onSelectionChange(next);
+    });
+    const unlistenSelect = listen("view-select-columns", () => {
+      setColumnDialogOpen(true);
+    });
+    return () => {
+      unlistenFirst3.then((fn) => fn());
+      unlistenAll.then((fn) => fn());
+      unlistenSelect.then((fn) => fn());
+    };
+  }, [dataColumns, onSelectionChange]);
 
   return (
     <>
@@ -66,11 +86,6 @@ export function LoadedFileView({
           </div>
         </div>
       )}
-      <ColumnSelector
-        dataColumns={dataColumns}
-        selectedColumns={selectedColumns}
-        onSelectionChange={onSelectionChange}
-      />
       <div className="chart-grid-scroll">
         <ChartGrid
           ref={chartGridRef}
@@ -78,6 +93,13 @@ export function LoadedFileView({
           selectedColumnNames={selectedColumns}
         />
       </div>
+      <ColumnSelectDialog
+        open={columnDialogOpen}
+        onClose={() => setColumnDialogOpen(false)}
+        dataColumns={dataColumns}
+        selectedColumns={selectedColumns}
+        onApply={onSelectionChange}
+      />
       <ExportChartsDialog
         open={showExportDialog}
         onClose={() => setShowExportDialog(false)}

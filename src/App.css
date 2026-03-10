@@ -1,10 +1,3 @@
-.logo.vite:hover {
-  filter: drop-shadow(0 0 2em #747bff);
-}
-
-.logo.react:hover {
-  filter: drop-shadow(0 0 2em #61dafb);
-}
 html,
 body {
   margin: 0;
@@ -76,48 +69,15 @@ body {
   padding-left: 1.25em;
 }
 
-/* Column selector bar – control area, sticks to top like a nav bar */
-.column-selector {
-  position: sticky;
-  top: 0;
-  z-index: 10;
-  display: flex;
-  align-items: baseline;
-  gap: 0.5rem;
-  margin: 0;
-  padding: 0.5rem 1rem;
-  flex-wrap: wrap;
-  font-size: 1rem;
-  line-height: 1.5;
-  background-color: #e8e8e8;
-  border-bottom: 1px solid #ccc;
-  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.08);
-}
-
-.column-selector-label {
-  flex-shrink: 0;
-}
-
-.column-selector-summary {
-  flex: 1;
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.column-selector-button {
-  font-size: 0.8rem;
-  padding: 0.25em 0.9em;
-}
-
 /* Column select dialog */
 .column-select-dialog {
   max-width: 90vw;
+  min-width: 320px;
   max-height: 85vh;
   padding: 0;
   border-radius: 8px;
   border: 1px solid #ccc;
+  margin: 1.5rem auto;
 }
 
 .column-select-dialog::backdrop {
@@ -366,12 +326,6 @@ body {
 
   .chart-context-menu button:hover {
     background: rgba(255, 255, 255, 0.1);
-  }
-
-  .column-selector {
-    background-color: #3a3a3a;
-    border-bottom-color: #555;
-    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
   }
 
   .chart-grid-scroll {

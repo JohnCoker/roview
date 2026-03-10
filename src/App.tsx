@@ -74,6 +74,11 @@ function App() {
   }, [runFile?.path]);
 
   useEffect(() => {
+    const enabled = !!runFile;
+    invoke("set_view_columns_enabled", { enabled }).catch(() => {});
+  }, [runFile]);
+
+  useEffect(() => {
     const unlistenOpenDialog = listen("menu-open-dialog", async () => {
       const selected = await openDialog({
         multiple: false,
