@@ -32,6 +32,17 @@ export const ChartGrid = forwardRef<ChartGridRef, ChartGridProps>(
   const reactEChartsRefs = useRef<ReactEChartsRef[]>([]);
   const prevSelectionRef = useRef<string[]>([]);
 
+  const formatAxisTick = (v: unknown) => {
+    if (typeof v !== "number" || !Number.isFinite(v)) return "";
+    const abs = Math.abs(v);
+    // Keep labels narrow so a fixed grid.left can stay aligned across charts.
+    if (abs >= 1_000_000) return `${(v / 1_000_000).toFixed(abs >= 10_000_000 ? 0 : 1)}M`;
+    if (abs >= 1_000) return `${(v / 1_000).toFixed(abs >= 10_000 ? 0 : 1)}k`;
+    if (abs >= 10) return v.toFixed(0);
+    if (abs >= 1) return v.toFixed(1);
+    return v.toFixed(2);
+  };
+
   useImperativeHandle(ref, () => ({
     getChartInstances() {
       return reactEChartsRefs.current
@@ -173,7 +184,7 @@ export const ChartGrid = forwardRef<ChartGridRef, ChartGridProps>(
 
         const option = {
           // Use a fixed left margin so all Y axes align visually across charts.
-          grid: { left: 100, right: 10, top: 8, bottom: 8, containLabel: false },
+          grid: { left: 68, right: 10, top: 8, bottom: 30, containLabel: false },
           tooltip: {
             trigger: "axis" as const,
             axisPointer: { type: "line" as const },
@@ -195,16 +206,18 @@ export const ChartGrid = forwardRef<ChartGridRef, ChartGridProps>(
           },
           xAxis: {
             type: "value" as const,
-            name: "",
-            nameGap: 0,
+            name: timeCol.name,
+            nameLocation: "middle",
+            nameGap: 22,
             splitLine: { show: false },
           },
           yAxis: {
             type: "value" as const,
             name: col.name,
             nameLocation: "middle",
-            nameGap: 50,
+            nameGap: 34,
             nameRotate: 90,
+            axisLabel: { margin: 4, formatter: formatAxisTick, hideOverlap: true },
             splitLine: { show: true, lineStyle: { opacity: 0.3 } },
           },
           dataZoom: [
@@ -223,6 +236,7 @@ export const ChartGrid = forwardRef<ChartGridRef, ChartGridProps>(
               data,
               symbol: "none",
               connectNulls: false,
+              lineStyle: { width: 2.5, color: "#111", cap: "round", join: "round" },
             },
           ],
         };
