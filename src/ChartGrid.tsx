@@ -4,6 +4,7 @@ import { connect } from "echarts";
 import type { ECharts } from "echarts";
 import { save as saveDialog, message as showMessage } from "@tauri-apps/plugin-dialog";
 import { writeFile } from "@tauri-apps/plugin-fs";
+import type { Theme } from "@fluentui/react-theme";
 import type { RunFile } from "./RunFile";
 import {
   formatVal,
@@ -17,6 +18,7 @@ import {
 
 export interface ChartGridProps {
   runFile: RunFile;
+  theme: Theme;
   selectedColumnNames: string[];
 }
 
@@ -27,10 +29,22 @@ export interface ChartGridRef {
 type ReactEChartsRef = { getEchartsInstance: () => ECharts };
 
 export const ChartGrid = forwardRef<ChartGridRef, ChartGridProps>(
-  function ChartGrid({ runFile, selectedColumnNames }, ref) {
+  function ChartGrid({ runFile, theme, selectedColumnNames }, ref) {
   const chartRefs = useRef<ECharts[]>([]);
   const reactEChartsRefs = useRef<ReactEChartsRef[]>([]);
   const prevSelectionRef = useRef<string[]>([]);
+  const chartFontFamily = theme.fontFamilyBase;
+  const chartText = theme.colorNeutralForeground1;
+  const chartSubtleText = theme.colorNeutralForeground2;
+  const chartAxis = theme.colorNeutralStrokeAccessible ?? theme.colorNeutralStroke1;
+  const chartGridLine = theme.colorNeutralStroke2;
+  const chartAccent = theme.colorBrandForeground1 ?? theme.colorBrandStroke1 ?? chartText;
+  const menuBg = theme.colorNeutralBackground1;
+  const menuBorder = theme.colorNeutralStroke1;
+  const borderRadius = theme.borderRadiusMedium;
+  const shadow = theme.shadow16;
+  const tooltipBg = theme.colorNeutralBackground1;
+  const tooltipBorder = theme.colorNeutralStroke1;
 
   const formatAxisTick = (v: unknown) => {
     if (typeof v !== "number" || !Number.isFinite(v)) return "";
@@ -149,12 +163,22 @@ export const ChartGrid = forwardRef<ChartGridRef, ChartGridProps>(
           />
           <div
             className="chart-context-menu"
-            style={{ left: contextMenu.x, top: contextMenu.y }}
+            style={{
+              left: contextMenu.x,
+              top: contextMenu.y,
+              backgroundColor: menuBg,
+              border: `1px solid ${menuBorder}`,
+              borderRadius,
+              boxShadow: shadow,
+              color: chartText,
+              fontFamily: chartFontFamily,
+            }}
             role="menu"
           >
             <button
             type="button"
             role="menuitem"
+            style={{ background: "transparent", border: 0, color: "inherit", font: "inherit" }}
             onClick={() => exportSingleChart(contextMenu.chartIndex, "png")}
           >
             Export as PNG…
@@ -162,6 +186,7 @@ export const ChartGrid = forwardRef<ChartGridRef, ChartGridProps>(
           <button
             type="button"
             role="menuitem"
+            style={{ background: "transparent", border: 0, color: "inherit", font: "inherit" }}
             onClick={() => exportSingleChart(contextMenu.chartIndex, "jpeg")}
           >
             Export as JPEG…
@@ -183,11 +208,17 @@ export const ChartGrid = forwardRef<ChartGridRef, ChartGridProps>(
         const colUnit = col.unit();
 
         const option = {
+          textStyle: { fontFamily: chartFontFamily, color: chartText },
           // Use a fixed left margin so all Y axes align visually across charts.
           grid: { left: 68, right: 10, top: 8, bottom: 30, containLabel: false },
           tooltip: {
             trigger: "axis" as const,
             axisPointer: { type: "line" as const },
+            backgroundColor: tooltipBg,
+            borderColor: tooltipBorder,
+            borderWidth: 1,
+            padding: 8,
+            textStyle: { fontFamily: chartFontFamily, color: chartText },
             formatter: (params: any) => {
               const p = Array.isArray(params) ? params[0] : params;
               const value = Array.isArray(p?.value) ? p.value : [p?.value, null];
@@ -210,6 +241,9 @@ export const ChartGrid = forwardRef<ChartGridRef, ChartGridProps>(
             nameLocation: "middle",
             nameGap: 22,
             splitLine: { show: false },
+            axisLine: { lineStyle: { color: chartAxis } },
+            axisLabel: { color: chartSubtleText },
+            nameTextStyle: { color: chartSubtleText, fontFamily: chartFontFamily },
           },
           yAxis: {
             type: "value" as const,
@@ -217,8 +251,10 @@ export const ChartGrid = forwardRef<ChartGridRef, ChartGridProps>(
             nameLocation: "middle",
             nameGap: 34,
             nameRotate: 90,
-            axisLabel: { margin: 4, formatter: formatAxisTick, hideOverlap: true },
-            splitLine: { show: true, lineStyle: { opacity: 0.3 } },
+            axisLine: { lineStyle: { color: chartAxis } },
+            axisLabel: { margin: 4, formatter: formatAxisTick, hideOverlap: true, color: chartSubtleText },
+            nameTextStyle: { color: chartSubtleText, fontFamily: chartFontFamily },
+            splitLine: { show: true, lineStyle: { color: chartGridLine } },
           },
           dataZoom: [
             {
@@ -236,7 +272,10 @@ export const ChartGrid = forwardRef<ChartGridRef, ChartGridProps>(
               data,
               symbol: "none",
               connectNulls: false,
-              lineStyle: { width: 2.5, color: "#111", cap: "round", join: "round" },
+              lineStyle: { width: 2.5, color: chartAccent, cap: "round", join: "round" },
+              emphasis: {
+                lineStyle: { width: 2.5, color: chartAccent, cap: "round", join: "round" },
+              },
             },
           ],
         };

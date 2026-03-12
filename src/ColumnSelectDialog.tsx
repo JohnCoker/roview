@@ -1,4 +1,16 @@
 import { useState, useEffect } from "react";
+import {
+  Button,
+  Checkbox,
+  Dialog,
+  DialogActions,
+  DialogBody,
+  DialogContent,
+  DialogSurface,
+  DialogTitle,
+  DialogTrigger,
+} from "@fluentui/react-components";
+import { Dismiss24Regular } from "@fluentui/react-icons";
 import type { Col } from "./RunFile";
 
 export interface ColumnSelectDialogProps {
@@ -45,43 +57,55 @@ export function ColumnSelectDialog({
     setPending(new Set(dataColumns.slice(0, 3).map((c) => c.name)));
   };
 
-  if (!open) return null;
-
   return (
-    <dialog className="column-select-dialog" open={open}>
-      <div className="column-select-dialog-content">
-        <div className="column-select-dialog-header">
-          <h2>Columns to Chart</h2>
-          <button type="button" className="column-select-dialog-close" onClick={onClose} aria-label="Close">
-            &times;
-          </button>
-        </div>
-        <div className="column-select-dialog-list">
-          {dataColumns.map((col) => (
-            <label key={col.name} className="column-select-dialog-row">
-              <input
-                type="checkbox"
-                checked={pending.has(col.name)}
-                onChange={() => toggle(col.name)}
-              />
-              <span>{col.name}</span>
-            </label>
-          ))}
-        </div>
-        <div className="column-select-dialog-actions">
-          <button type="button" onClick={selectFirstThree}>
-            First 3
-          </button>
-          <div className="column-select-dialog-actions-right">
-            <button type="button" onClick={onClose}>
+    <Dialog
+      open={open}
+      onOpenChange={(_e, data) => {
+        if (!data.open) onClose();
+      }}
+    >
+      <DialogSurface style={{ maxWidth: 420 }}>
+        <DialogBody>
+          <DialogTitle
+            action={
+              <DialogTrigger action="close" disableButtonEnhancement>
+                <Button
+                  appearance="subtle"
+                  aria-label="Close"
+                  icon={<Dismiss24Regular />}
+                  size="small"
+                />
+              </DialogTrigger>
+            }
+          >
+            Columns to Chart
+          </DialogTitle>
+          <DialogContent style={{ maxHeight: "60vh", overflowY: "auto" }}>
+            {dataColumns.map((col) => (
+              <div key={col.name} style={{ paddingBlock: "2px" }}>
+                <Checkbox
+                  checked={pending.has(col.name)}
+                  label={col.name}
+                  onChange={() => toggle(col.name)}
+                />
+              </div>
+            ))}
+          </DialogContent>
+          <DialogActions position="start">
+            <Button appearance="secondary" onClick={selectFirstThree}>
+              First 3
+            </Button>
+          </DialogActions>
+          <DialogActions>
+            <Button appearance="secondary" onClick={onClose}>
               Cancel
-            </button>
-            <button type="button" onClick={handleApply}>
+            </Button>
+            <Button appearance="primary" onClick={handleApply}>
               OK
-            </button>
-          </div>
-        </div>
-      </div>
-    </dialog>
+            </Button>
+          </DialogActions>
+        </DialogBody>
+      </DialogSurface>
+    </Dialog>
   );
 }

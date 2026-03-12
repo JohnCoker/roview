@@ -4,6 +4,21 @@ import { writeFile } from "@tauri-apps/plugin-fs";
 import JSZip from "jszip";
 import type { ECharts } from "echarts";
 import {
+  Button,
+  Dialog,
+  DialogActions,
+  DialogBody,
+  DialogContent,
+  DialogSurface,
+  DialogTitle,
+  DialogTrigger,
+  Dropdown,
+  Input,
+  Label,
+  Option,
+} from "@fluentui/react-components";
+import { Dismiss24Regular } from "@fluentui/react-icons";
+import {
   sanitizeFileName,
   dataUrlToBytes,
   errorMessage,
@@ -91,6 +106,7 @@ export function ExportChartsDialog({
   const [format, setFormat] = useState<ExportFormat>("png");
   const [prefix, setPrefix] = useState("");
   const [busy, setBusy] = useState(false);
+  const formatLabel = FORMATS.find((f) => f.value === format)?.label ?? format.toUpperCase();
 
   const charts = getChartInstances();
   const count = Math.min(charts.length, chartNames.length);
@@ -155,73 +171,85 @@ export function ExportChartsDialog({
     }
   };
 
-  if (!open) return null;
-
   return (
-    <dialog className="export-charts-dialog" open={open}>
-      <div className="export-charts-dialog-content">
-        <div className="export-charts-dialog-header">
-          <h2>Export charts</h2>
-          <button
-            type="button"
-            className="export-charts-dialog-close"
-            onClick={onClose}
-            aria-label="Close"
+    <Dialog
+      open={open}
+      onOpenChange={(_e, data) => {
+        if (!data.open) onClose();
+      }}
+    >
+      <DialogSurface style={{ maxWidth: 420 }}>
+        <DialogBody>
+          <DialogTitle
+            action={
+              <DialogTrigger action="close" disableButtonEnhancement>
+                <Button
+                  appearance="subtle"
+                  aria-label="Close"
+                  icon={<Dismiss24Regular />}
+                  size="small"
+                />
+              </DialogTrigger>
+            }
           >
-            &times;
-          </button>
-        </div>
-        <div className="export-charts-dialog-body">
-          <div className="export-charts-dialog-field">
-            <label htmlFor="export-format">Format</label>
-            <select
-              id="export-format"
-              value={format}
-              onChange={(e) => setFormat(e.target.value as ExportFormat)}
+            Export charts
+          </DialogTitle>
+          <DialogContent>
+            <p style={{ margin: 0, marginBottom: "0.75rem", fontSize: "0.9rem", opacity: 0.9 }}>
+              {count} chart{count !== 1 ? "s" : ""} to export
+            </p>
+            <div style={{ display: "flex", flexDirection: "column", gap: "4px", marginBottom: "1rem" }}>
+              <Label id="export-format-label">Format</Label>
+              <Dropdown
+                aria-labelledby="export-format-label"
+                value={formatLabel}
+                selectedOptions={[format]}
+                disabled={!canExport || busy}
+                onOptionSelect={(_e, data) => {
+                  const next = data.optionValue as ExportFormat | undefined;
+                  if (next === "png" || next === "jpeg") setFormat(next);
+                }}
+              >
+                {FORMATS.map((f) => (
+                  <Option key={f.value} value={f.value}>
+                    {f.label}
+                  </Option>
+                ))}
+              </Dropdown>
+            </div>
+            <div style={{ display: "flex", flexDirection: "column", gap: "4px", marginBottom: "1rem" }}>
+              <Label htmlFor="export-prefix">File prefix (optional)</Label>
+              <Input
+                id="export-prefix"
+                value={prefix}
+                onChange={(_e, data) => setPrefix(data.value)}
+                placeholder="e.g. run_2025-03-07"
+                disabled={!canExport}
+              />
+              <span style={{ fontSize: "0.85rem" }}>
+                Applied to all exported filenames so they sort together.
+              </span>
+            </div>
+          </DialogContent>
+          <DialogActions>
+            <Button
+              onClick={exportToDirectory}
+              disabled={!canExport || busy}
             >
-              {FORMATS.map((f) => (
-                <option key={f.value} value={f.value}>
-                  {f.label}
-                </option>
-              ))}
-            </select>
-          </div>
-          <div className="export-charts-dialog-field">
-            <label htmlFor="export-prefix">File prefix (optional)</label>
-            <input
-              id="export-prefix"
-              type="text"
-              value={prefix}
-              onChange={(e) => setPrefix(e.target.value)}
-              placeholder="e.g. run_2025-03-07"
-              disabled={!canExport}
-            />
-            <span className="export-charts-dialog-hint">Applied to all exported filenames so they sort together.</span>
-          </div>
-          <p className="export-charts-dialog-count">
-            {count} chart{count !== 1 ? "s" : ""} to export
-          </p>
-        </div>
-        <div className="export-charts-dialog-actions">
-          <button
-            type="button"
-            onClick={exportToDirectory}
-            disabled={!canExport || busy}
-          >
-            Save to directory…
-          </button>
-          <button
-            type="button"
-            onClick={exportToZip}
-            disabled={!canExport || busy}
-          >
-            Save as ZIP…
-          </button>
-          <button type="button" onClick={onClose}>
-            Cancel
-          </button>
-        </div>
-      </div>
-    </dialog>
+              Save…
+            </Button>
+            <Button
+              onClick={exportToZip}
+              disabled={!canExport || busy}
+            >
+              Save ZIP…
+            </Button>
+            <Button appearance="secondary" onClick={onClose}>
+              Cancel
+            </Button>
+          </DialogActions>
+        </DialogBody>
+      </DialogSurface>
+    </Dialog>
   );
 }

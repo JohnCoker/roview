@@ -3,11 +3,17 @@ import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { open as openDialog, message as showDialogMessage } from "@tauri-apps/plugin-dialog";
 import { readTextFile } from "@tauri-apps/plugin-fs";
+import { Button, tokens } from "@fluentui/react-components";
+import type { Theme } from "@fluentui/react-theme";
 import { RunFile, Problem } from "./RunFile";
 import { LoadedFileView } from "./LoadedFileView";
 import "./App.css";
 
-function App() {
+export interface AppProps {
+  theme: Theme;
+}
+
+function App({ theme }: AppProps) {
   const [currentFilePath, setCurrentFilePath] = useState<string | null>(null);
   const [runFile, setRunFile] = useState<RunFile | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -120,20 +126,52 @@ function App() {
   const isEmpty = !currentFilePath;
 
   return (
-    <main className={`container ${isEmpty ? "container--empty" : ""}`}>
+    <main
+      className={`container ${isEmpty ? "container--empty" : ""}`}
+      style={{
+        backgroundColor: theme.colorNeutralBackground1,
+        color: theme.colorNeutralForeground1,
+      }}
+    >
       {isEmpty ? (
         <p>Use File → Open… or open a CSV via the system.</p>
       ) : loadError ? (
         <p className="load-error">{loadError}</p>
       ) : runFile ? (
-        <LoadedFileView
-          runFile={runFile}
-          problems={problems}
-          showWarnings={showWarnings}
-          setShowWarnings={setShowWarnings}
-          selectedColumns={selectedColumns}
-          onSelectionChange={setSelectedColumns}
-        />
+        <>
+          {problems && problems.length > 0 && showWarnings && (
+            <div
+              className="warning-banner"
+              style={{
+                padding: "12px 16px",
+                borderRadius: tokens.borderRadiusLarge,
+                border: `1px solid ${tokens.colorPaletteYellowBorder1}`,
+                backgroundColor: tokens.colorPaletteYellowBackground2,
+                color: tokens.colorNeutralForeground1,
+              }}
+            >
+              <div style={{ display: "flex", alignItems: "start", justifyContent: "space-between", gap: 12 }}>
+                <div>
+                  <div style={{ fontWeight: 600, marginBottom: 4 }}>Warnings for this file</div>
+                  <ul className="warning-banner-list">
+                    {problems.map((p, idx) => (
+                      <li key={idx}>{p.message}</li>
+                    ))}
+                  </ul>
+                </div>
+                <Button appearance="subtle" onClick={() => setShowWarnings(false)} aria-label="Dismiss warnings">
+                  ×
+                </Button>
+              </div>
+            </div>
+          )}
+          <LoadedFileView
+            runFile={runFile}
+            theme={theme}
+            selectedColumns={selectedColumns}
+            onSelectionChange={setSelectedColumns}
+          />
+        </>
       ) : null}
     </main>
   );

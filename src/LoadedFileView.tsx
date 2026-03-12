@@ -1,25 +1,22 @@
 import { useEffect, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
-import type { RunFile, Problem } from "./RunFile";
+import type { RunFile } from "./RunFile";
+import type { Theme } from "@fluentui/react-theme";
 import { ColumnSelectDialog } from "./ColumnSelectDialog";
 import { ChartGrid, type ChartGridRef } from "./ChartGrid";
 import { ExportChartsDialog } from "./ExportChartsDialog";
 
 export interface LoadedFileViewProps {
   runFile: RunFile;
-  problems: Problem[] | null;
-  showWarnings: boolean;
-  setShowWarnings: (show: boolean) => void;
+  theme: Theme;
   selectedColumns: string[];
   onSelectionChange: (selected: string[]) => void;
 }
 
 export function LoadedFileView({
   runFile,
-  problems,
-  showWarnings,
-  setShowWarnings,
+  theme,
   selectedColumns,
   onSelectionChange,
 }: LoadedFileViewProps) {
@@ -66,30 +63,11 @@ export function LoadedFileView({
 
   return (
     <>
-      {problems && problems.length > 0 && showWarnings && (
-        <div className="warning-banner">
-          <button
-            type="button"
-            className="warning-banner-close"
-            onClick={() => setShowWarnings(false)}
-            aria-label="Dismiss warnings"
-          >
-            &times;
-          </button>
-          <div className="warning-banner-content">
-            <strong>Warnings for this file:</strong>
-            <ul>
-              {problems.map((p, idx) => (
-                <li key={idx}>{p.message}</li>
-              ))}
-            </ul>
-          </div>
-        </div>
-      )}
       <div className="chart-grid-scroll">
         <ChartGrid
           ref={chartGridRef}
           runFile={runFile}
+          theme={theme}
           selectedColumnNames={selectedColumns}
         />
       </div>

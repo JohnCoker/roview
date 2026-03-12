@@ -9,22 +9,6 @@ body {
   height: 100%;
 }
 
-:root {
-  font-family: Inter, Avenir, Helvetica, Arial, sans-serif;
-  font-size: 16px;
-  line-height: 24px;
-  font-weight: 400;
-
-  color: #0f0f0f;
-  background-color: #f6f6f6;
-
-  font-synthesis: none;
-  text-rendering: optimizeLegibility;
-  -webkit-font-smoothing: antialiased;
-  -moz-osx-font-smoothing: grayscale;
-  -webkit-text-size-adjust: 100%;
-}
-
 .container {
   margin: 0;
   display: flex;
@@ -41,195 +25,25 @@ body {
 
 /* Load error and warning banner */
 .load-error {
-  color: #c00;
   margin: 1rem;
 }
 
 .warning-banner {
-  position: relative;
   margin: 0 1rem 1rem;
-  padding: 1rem 2.5rem 1rem 1rem;
-  text-align: left;
-  background: #fcf3cf;
-  border: 1px solid #f0ad4e;
-  border-radius: 8px;
 }
 
-.warning-banner-close {
-  position: absolute;
-  top: 0.5rem;
-  right: 0.5rem;
-  padding: 0.2em 0.5em;
-  font-size: 1.25rem;
-  line-height: 1;
-}
-
-.warning-banner-content ul {
+.warning-banner-list {
   margin: 0.5em 0 0;
   padding-left: 1.25em;
 }
 
-/* Column select dialog */
-.column-select-dialog {
-  max-width: 90vw;
-  min-width: 320px;
-  max-height: 85vh;
-  padding: 0;
-  border-radius: 8px;
-  border: 1px solid #ccc;
-  margin: 1.5rem auto;
-}
-
-.column-select-dialog::backdrop {
-  background: rgba(0, 0, 0, 0.4);
-}
-
-.column-select-dialog-content {
-  display: flex;
-  flex-direction: column;
-  max-height: 85vh;
-}
-
-.column-select-dialog-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 1rem 1rem 0;
-}
-
-.column-select-dialog-header h2 {
-  margin: 0;
-  font-size: 1.1rem;
-}
-
-.column-select-dialog-close {
-  padding: 0.2em 0.5em;
-  font-size: 1.25rem;
-  line-height: 1;
-}
-
-.column-select-dialog-list {
-  overflow-y: auto;
-  padding: 1rem;
-  flex: 1;
-  min-height: 200px;
-}
-
-.column-select-dialog-row {
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-  padding: 0.35em 0;
-  cursor: pointer;
-}
-
-.column-select-dialog-row:hover {
-  background: rgba(0, 0, 0, 0.05);
-}
-
-.column-select-dialog-actions {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 1rem;
-  padding: 1rem;
-  border-top: 1px solid #eee;
-}
-
-.column-select-dialog-actions-right {
-  display: flex;
-  gap: 0.5rem;
-}
-
-/* Export charts dialog */
-.export-charts-dialog {
-  max-width: 90vw;
-  width: 420px;
-  padding: 0;
-  border-radius: 8px;
-  border: 1px solid #ccc;
-}
-
-.export-charts-dialog::backdrop {
-  background: rgba(0, 0, 0, 0.4);
-}
-
-.export-charts-dialog-content {
-  display: flex;
-  flex-direction: column;
-}
-
-.export-charts-dialog-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 1rem 1rem 0;
-}
-
-.export-charts-dialog-header h2 {
-  margin: 0;
-  font-size: 1.1rem;
-}
-
-.export-charts-dialog-close {
-  padding: 0.2em 0.5em;
-  font-size: 1.25rem;
-  line-height: 1;
-}
-
-.export-charts-dialog-body {
-  padding: 1rem;
-}
-
-.export-charts-dialog-field {
-  display: flex;
-  flex-direction: column;
-  gap: 0.25rem;
-  margin-bottom: 1rem;
-}
-
-.export-charts-dialog-field label {
-  font-weight: 500;
-}
-
-.export-charts-dialog-field select,
-.export-charts-dialog-field input {
-  max-width: 100%;
-  padding: 0.35em 0.5em;
-}
-
-.export-charts-dialog-hint {
-  font-size: 0.85rem;
-  color: #666;
-}
-
-.export-charts-dialog-count {
-  margin: 0 0 1rem;
-  font-size: 0.9rem;
-  opacity: 0.9;
-}
-
-.export-charts-dialog-actions {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 0.5rem;
-  padding: 1rem;
-  border-top: 1px solid #eee;
-}
-
-.export-charts-dialog-actions button:first-child {
-  margin-right: 0.5rem;
-}
-
-/* Chart grid – content area with white background, only this area scrolls */
+/* Chart grid – only this area scrolls */
 .chart-grid-scroll {
   flex: 1;
   min-height: 0;
   overflow-y: auto;
   margin: 0;
   padding: 1rem;
-  background-color: #fff;
 }
 
 .chart-grid {
@@ -250,10 +64,6 @@ body {
   z-index: 100000;
   min-width: 160px;
   padding: 0.25rem 0;
-  background: #fff;
-  border: 1px solid #ccc;
-  border-radius: 6px;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
 }
 
 .chart-context-menu button {
@@ -261,14 +71,7 @@ body {
   width: 100%;
   padding: 0.4rem 1rem;
   text-align: left;
-  border: none;
-  background: none;
-  font: inherit;
   cursor: pointer;
-}
-
-.chart-context-menu button:hover {
-  background: #eee;
 }
 
 .chart-grid-item {
@@ -286,49 +89,3 @@ body {
   opacity: 0.8;
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    color: #f6f6f6;
-    background-color: #2f2f2f;
-  }
-
-  a:hover {
-    color: #24c8db;
-  }
-
-  .warning-banner {
-    background: #3d3500;
-    border-color: #8a7a0a;
-  }
-
-  .column-select-dialog,
-  .export-charts-dialog {
-    border-color: #555;
-  }
-
-  .column-select-dialog-actions,
-  .export-charts-dialog-actions {
-    border-top-color: #444;
-  }
-
-  .column-select-dialog-row:hover {
-    background: rgba(255, 255, 255, 0.08);
-  }
-
-  .export-charts-dialog-hint {
-    color: #999;
-  }
-
-  .chart-context-menu {
-    background: #2f2f2f;
-    border-color: #555;
-  }
-
-  .chart-context-menu button:hover {
-    background: rgba(255, 255, 255, 0.1);
-  }
-
-  .chart-grid-scroll {
-    background-color: #2f2f2f;
-  }
-}
