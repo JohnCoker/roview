@@ -38,6 +38,17 @@ body {
 }
 
 /* Chart grid – only this area scrolls */
+/* Suppress browser-like selection in chart area and overlays */
+.chart-grid-scroll,
+.chart-grid,
+.chart-grid-item,
+.chart-context-menu-overlay,
+.chart-context-menu,
+.app-dialog-surface {
+  user-select: none;
+  -webkit-user-select: none;
+}
+
 .chart-grid-scroll {
   flex: 1;
   min-height: 0;

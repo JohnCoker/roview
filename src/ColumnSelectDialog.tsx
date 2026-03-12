@@ -64,7 +64,7 @@ export function ColumnSelectDialog({
         if (!data.open) onClose();
       }}
     >
-      <DialogSurface style={{ maxWidth: 420 }}>
+      <DialogSurface className="app-dialog-surface" style={{ maxWidth: 420 }}>
         <DialogBody>
           <DialogTitle
             action={

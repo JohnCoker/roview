@@ -22,6 +22,12 @@ function App({ theme }: AppProps) {
   const [selectedColumns, setSelectedColumns] = useState<string[]>([]);
 
   useEffect(() => {
+    const preventContextMenu = (e: MouseEvent) => e.preventDefault();
+    window.addEventListener("contextmenu", preventContextMenu);
+    return () => window.removeEventListener("contextmenu", preventContextMenu);
+  }, []);
+
+  useEffect(() => {
     invoke<string[]>("get_pending_open_files").then((paths) => {
       if (paths.length > 0) {
         paths.forEach((p) => invoke("add_recent", { path: p }));
