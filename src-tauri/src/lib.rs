@@ -15,6 +15,7 @@ pub struct AppState {
     pub pending_open_files: RwLock<Vec<PathBuf>>,
     pub export_charts_enabled: RwLock<bool>,
     pub view_columns_enabled: RwLock<bool>,
+    pub map_trace_enabled: RwLock<bool>,
 }
 
 fn build_file_submenu(
@@ -71,17 +72,26 @@ fn build_app_menu(handle: &tauri::AppHandle, state: &AppState) -> tauri::Result<
         .read()
         .map(|g| *g)
         .unwrap_or(false);
+    let map_trace_enabled = state
+        .map_trace_enabled
+        .read()
+        .map(|g| *g)
+        .unwrap_or(false);
     let first_three_item =
         MenuItemBuilder::with_id("view-first-3-columns", "First 3 Columns").enabled(view_enabled).build(handle)?;
     let all_columns_item =
         MenuItemBuilder::with_id("view-all-columns", "All Columns").enabled(view_enabled).build(handle)?;
     let select_columns_item =
         MenuItemBuilder::with_id("view-select-columns", "Select Columns…").enabled(view_enabled).build(handle)?;
+    let map_trace_item =
+        MenuItemBuilder::with_id("view-map-trace", "Map Trace").enabled(map_trace_enabled).build(handle)?;
 
     let view_submenu = SubmenuBuilder::with_id(handle, "view", "View")
         .item(&first_three_item)
         .item(&all_columns_item)
         .item(&select_columns_item)
+        .separator()
+        .item(&map_trace_item)
         .build()?;
 
     if cfg!(target_os = "macos") {
@@ -174,6 +184,23 @@ fn set_view_columns_enabled(
 }
 
 #[tauri::command]
+fn set_map_trace_enabled(
+    enabled: bool,
+    app: tauri::AppHandle,
+    state: tauri::State<Arc<AppState>>,
+) -> Result<(), String> {
+    state
+        .map_trace_enabled
+        .write()
+        .map(|mut g| *g = enabled)
+        .map_err(|e| e.to_string())?;
+    if let Ok(menu) = build_app_menu(&app, &state) {
+        let _ = app.set_menu(menu);
+    }
+    Ok(())
+}
+
+#[tauri::command]
 fn add_recent(
     path: String,
     app: tauri::AppHandle,
@@ -216,6 +243,7 @@ pub fn run() {
             add_recent,
             set_export_charts_enabled,
             set_view_columns_enabled,
+            set_map_trace_enabled,
         ])
         .setup(move |app| {
             // Load persistent recents into state
@@ -321,6 +349,12 @@ pub fn run() {
                 if id == "view-select-columns" {
                     if let Some(w) = app_handle.get_webview_window("main") {
                         let _ = w.emit("view-select-columns", ());
+                    }
+                    return;
+                }
+                if id == "view-map-trace" {
+                    if let Some(w) = app_handle.get_webview_window("main") {
+                        let _ = w.emit("view-map-trace", ());
                     }
                     return;
                 }

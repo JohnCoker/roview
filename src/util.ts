@@ -57,6 +57,16 @@ export const CHART_EXPORT_DATA_URL_OPTS = {
   backgroundColor: "#fff",
 } as const;
 
+/** Special chart selection ID used to render the location trace map. */
+export const MAP_TRACE_SELECTION = "__map_trace__";
+
+/** User-facing label for the location trace map chart. */
+export const MAP_TRACE_LABEL = "Map Trace";
+
+export function isMapTraceSelection(name: string): boolean {
+  return name === MAP_TRACE_SELECTION;
+}
+
 /**
  * Decode a PNG/JPEG data URL to bytes, or null if invalid.
  */

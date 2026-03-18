@@ -192,6 +192,12 @@ export class RunFile {
     return this.getColumn('Time');
   }
 
+  locationColumns(): { lat: Col, long: Col } | undefined {
+    const lat = this.getColumn("Lat") || this.getColumn("Geod-Lat");
+    const long = this.getColumn("Long") || this.getColumn("Geod-Long");
+    if (lat && long && lat.hasRange() && long.hasRange()) return { lat, long };
+  }
+
   dataColumns(): Col[] {
     const timeCol = this.timeColumn();
     return this.columns.filter(c => c != timeCol && c.hasRange());

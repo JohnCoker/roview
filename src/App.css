@@ -53,6 +53,7 @@ body {
   flex: 1;
   min-height: 0;
   overflow-y: auto;
+  overflow-x: hidden;
   margin: 0;
   padding: 1rem;
 }
@@ -88,6 +89,7 @@ body {
 .chart-grid-item {
   width: 100%;
   min-height: 200px;
+  overflow: hidden;
   cursor: default;
 }
 

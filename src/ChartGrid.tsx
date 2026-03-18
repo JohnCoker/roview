@@ -1,11 +1,12 @@
 import { forwardRef, useImperativeHandle, useRef, useState, useEffect } from "react";
-import ReactECharts from "echarts-for-react";
-import { connect } from "echarts";
+import ReactEChartsCore from "echarts-for-react/lib/core";
+import * as echarts from "echarts";
 import type { ECharts } from "echarts";
 import { save as saveDialog, message as showMessage } from "@tauri-apps/plugin-dialog";
 import { writeFile } from "@tauri-apps/plugin-fs";
 import type { Theme } from "@fluentui/react-theme";
-import type { RunFile } from "./RunFile";
+import type { Col, RunFile } from "./RunFile";
+import worldGeoJson from "./world.json";
 import {
   formatVal,
   sanitizeFileName,
@@ -14,12 +15,16 @@ import {
   EXPORT_EXT,
   EXPORT_FORMAT_LABEL,
   CHART_EXPORT_DATA_URL_OPTS,
+  MAP_TRACE_LABEL,
+  MAP_TRACE_SELECTION,
+  isMapTraceSelection,
 } from "./util";
 
 export interface ChartGridProps {
   runFile: RunFile;
   theme: Theme;
   selectedColumnNames: string[];
+  scrollTargetKey?: string | null;
 }
 
 export interface ChartGridRef {
@@ -27,11 +32,30 @@ export interface ChartGridRef {
 }
 
 type ReactEChartsRef = { getEchartsInstance: () => ECharts };
+type LineChartSelection = { key: string; label: string; kind: "line"; col: Col };
+type MapChartSelection = { key: string; label: string; kind: "map" };
+type ChartSelection = LineChartSelection | MapChartSelection;
+
+const WORLD_MAP_NAME = "roview-world";
+const LINE_CHART_MIN_HEIGHT = 200;
+const MAP_CHART_MIN_HEIGHT = 320;
+
+function normalizeLongitudeDegrees(longitude: number): number {
+  let normalized = longitude;
+  while (normalized > 180) normalized -= 360;
+  while (normalized < -180) normalized += 360;
+  return normalized;
+}
+
+if (echarts.getMap(WORLD_MAP_NAME) == null) {
+  echarts.registerMap(WORLD_MAP_NAME, worldGeoJson as never);
+}
 
 export const ChartGrid = forwardRef<ChartGridRef, ChartGridProps>(
-  function ChartGrid({ runFile, theme, selectedColumnNames }, ref) {
+  function ChartGrid({ runFile, theme, selectedColumnNames, scrollTargetKey }, ref) {
   const chartRefs = useRef<ECharts[]>([]);
   const reactEChartsRefs = useRef<ReactEChartsRef[]>([]);
+  const chartItemRefs = useRef<Record<string, HTMLDivElement | null>>({});
   const prevSelectionRef = useRef<string[]>([]);
   const chartFontFamily = theme.fontFamilyBase;
   const chartText = theme.colorNeutralForeground1;
@@ -45,6 +69,16 @@ export const ChartGrid = forwardRef<ChartGridRef, ChartGridProps>(
   const shadow = theme.shadow16;
   const tooltipBg = theme.colorNeutralBackground1;
   const tooltipBorder = theme.colorNeutralStroke1;
+  const chartSelections: ChartSelection[] = selectedColumnNames.flatMap((name): ChartSelection[] => {
+    if (isMapTraceSelection(name)) {
+      return runFile.locationColumns() != null
+        ? [{ key: MAP_TRACE_SELECTION, label: MAP_TRACE_LABEL, kind: "map" as const }]
+        : [];
+    }
+    const col = runFile.getColumn(name);
+    return col != null ? [{ key: col.name, label: col.name, kind: "line" as const, col }] : [];
+  });
+  const lineChartCount = chartSelections.filter((selection) => selection.kind === "line").length;
 
   const formatAxisTick = (v: unknown) => {
     if (typeof v !== "number" || !Number.isFinite(v)) return "";
@@ -82,8 +116,24 @@ export const ChartGrid = forwardRef<ChartGridRef, ChartGridProps>(
     return () => window.removeEventListener("mousedown", onMouseDown);
   }, [contextMenu]);
 
+  useEffect(() => {
+    if (scrollTargetKey == null) return;
+    const chartEl = chartItemRefs.current[scrollTargetKey];
+    if (!(chartEl instanceof HTMLElement)) return;
+    const scrollContainer = chartEl.closest(".chart-grid-scroll");
+    if (!(scrollContainer instanceof HTMLElement)) return;
+
+    const containerRect = scrollContainer.getBoundingClientRect();
+    const chartRect = chartEl.getBoundingClientRect();
+    const above = chartRect.top < containerRect.top;
+    const below = chartRect.bottom > containerRect.bottom;
+    if (above || below) {
+      chartEl.scrollIntoView({ block: "nearest", behavior: "smooth" });
+    }
+  }, [chartSelections, scrollTargetKey]);
+
   const timeCol = runFile.timeColumn();
-  if (!timeCol || selectedColumnNames.length === 0) {
+  if (!timeCol || chartSelections.length === 0) {
     return (
       <p className="chart-grid-empty">Select columns above to add charts.</p>
     );
@@ -108,8 +158,8 @@ export const ChartGrid = forwardRef<ChartGridRef, ChartGridProps>(
   const exportSingleChart = async (chartIndex: number, format: "png" | "jpeg") => {
     setContextMenu(null);
     const ref = reactEChartsRefs.current[chartIndex];
-    const colName = selectedColumnNames[chartIndex];
-    if (!ref || !colName) return;
+    const chartName = chartSelections[chartIndex]?.label;
+    if (!ref || !chartName) return;
     const chart = ref.getEchartsInstance();
     if (!chart) return;
     let dataUrl: string;
@@ -124,7 +174,7 @@ export const ChartGrid = forwardRef<ChartGridRef, ChartGridProps>(
       return;
     }
     const ext = EXPORT_EXT[format];
-    const defaultName = `${sanitizeFileName(colName, "chart")}.${ext}`;
+    const defaultName = `${sanitizeFileName(chartName, "chart")}.${ext}`;
     const path = await saveDialog({
       filters: [{ name: EXPORT_FORMAT_LABEL[format], extensions: [ext] }],
       defaultPath: defaultName,
@@ -143,10 +193,11 @@ export const ChartGrid = forwardRef<ChartGridRef, ChartGridProps>(
     }
   };
 
-  const handleChartReady = (chart: ECharts) => {
+  const handleChartReady = (chart: ECharts, kind: "line" | "map") => {
+    if (kind !== "line") return;
     chartRefs.current.push(chart);
-    if (chartRefs.current.length === selectedColumnNames.length) {
-      connect(chartRefs.current);
+    if (lineChartCount > 1 && chartRefs.current.length === lineChartCount) {
+      echarts.connect(chartRefs.current);
     }
   };
 
@@ -194,106 +245,190 @@ export const ChartGrid = forwardRef<ChartGridRef, ChartGridProps>(
           </div>
         </>
       )}
-      {selectedColumnNames.map((colName, index) => {
-        const col = runFile.getColumn(colName);
-        if (!col) return null;
-        const yValues = runFile.getColumnValues(col.name);
-        const data: (number | null)[][] = timeValues
-          .map((t, i) => (t != null ? [t, yValues[i] ?? null] : null))
-          .filter((p): p is [number, number | null] => p != null);
+      {chartSelections.map((selection, index) => {
+        const isMapChart = selection.kind === "map";
+        const option = isMapChart
+          ? (() => {
+              const locationColumns = runFile.locationColumns();
+              if (locationColumns == null) return null;
+              const latValues = runFile.getColumnValues(locationColumns.lat.name);
+              const longValues = runFile.getColumnValues(locationColumns.long.name);
+              const points = latValues
+                .map((lat, i) => {
+                  const long = longValues[i];
+                  const time = timeValues[i];
+                  if (lat == null || long == null) return null;
+                  return { value: [normalizeLongitudeDegrees(long), lat, time], rawLong: long };
+                })
+                .filter((point): point is { value: [number, number, number | null]; rawLong: number } => point != null);
+              const latKind = locationColumns.lat.kind();
+              const latUnit = locationColumns.lat.unit();
+              const longKind = locationColumns.long.kind();
+              const longUnit = locationColumns.long.unit();
+              const mapFill = theme.colorNeutralBackground3 ?? theme.colorNeutralBackground2;
+              const mapHighlight = theme.colorNeutralBackground4 ?? mapFill;
 
-        const timeKind = timeCol.kind();
-        const timeUnit = timeCol.unit();
-        const colKind = col.kind();
-        const colUnit = col.unit();
+              return {
+                textStyle: { fontFamily: chartFontFamily, color: chartText },
+                tooltip: {
+                  trigger: "item" as const,
+                  backgroundColor: tooltipBg,
+                  borderColor: tooltipBorder,
+                  borderWidth: 1,
+                  padding: 8,
+                  textStyle: { fontFamily: chartFontFamily, color: chartText },
+                  formatter: (params: any) => {
+                    const value = Array.isArray(params?.value) ? params.value : [];
+                    const rawLong = (params?.data?.rawLong ?? value[0]) as number | null | undefined;
+                    const lat = value[1] as number | null | undefined;
+                    const time = value[2] as number | null | undefined;
 
-        const option = {
-          textStyle: { fontFamily: chartFontFamily, color: chartText },
-          // Use a fixed left margin so all Y axes align visually across charts.
-          grid: { left: 68, right: 10, top: 8, bottom: 30, containLabel: false },
-          tooltip: {
-            trigger: "axis" as const,
-            axisPointer: { type: "line" as const },
-            backgroundColor: tooltipBg,
-            borderColor: tooltipBorder,
-            borderWidth: 1,
-            padding: 8,
-            textStyle: { fontFamily: chartFontFamily, color: chartText },
-            formatter: (params: any) => {
-              const p = Array.isArray(params) ? params[0] : params;
-              const value = Array.isArray(p?.value) ? p.value : [p?.value, null];
-              const time = value[0] as number | null | undefined;
-              const y = value[1] as number | null | undefined;
+                    const timeLabel = `${timeCol.kind()}: ${formatVal(time)}${
+                      timeCol.unit() ? ` ${timeCol.unit()}` : ""
+                    }`;
+                    const latLabel = `${latKind}: ${formatVal(lat)}${
+                      latUnit ? ` ${latUnit}` : ""
+                    }`;
+                    const longLabel = `${longKind}: ${formatVal(rawLong)}${
+                      longUnit ? ` ${longUnit}` : ""
+                    }`;
+                    return `${timeLabel}<br/>${latLabel}<br/>${longLabel}`;
+                  },
+                },
+                geo: {
+                  map: WORLD_MAP_NAME,
+                  left: 8,
+                  right: 8,
+                  top: 8,
+                  bottom: 8,
+                  roam: "move",
+                  scaleLimit: { min: 1, max: 20 },
+                  itemStyle: { areaColor: mapFill, borderColor: chartAxis },
+                  emphasis: { itemStyle: { areaColor: mapHighlight } },
+                },
+                series: [
+                  {
+                    type: "scatter" as const,
+                    coordinateSystem: "geo" as const,
+                    data: points,
+                    symbolSize: 4,
+                    z: 3,
+                    itemStyle: { color: chartAccent, opacity: 1 },
+                  },
+                ],
+              };
+            })()
+          : (() => {
+              const col = selection.col;
+              if (col == null) return null;
+              const yValues = runFile.getColumnValues(col.name);
+              const data: (number | null)[][] = timeValues
+                .map((t, i) => (t != null ? [t, yValues[i] ?? null] : null))
+                .filter((p): p is [number, number | null] => p != null);
 
-              const timeLabel = `${timeKind}: ${formatVal(time)}${
-                timeUnit ? ` ${timeUnit}` : ""
-              }`;
-              const colLabel = `${colKind}: ${formatVal(y)}${
-                colUnit ? ` ${colUnit}` : ""
-              }`;
+              const timeKind = timeCol.kind();
+              const timeUnit = timeCol.unit();
+              const colKind = col.kind();
+              const colUnit = col.unit();
 
-              return `${timeLabel}<br/>${colLabel}`;
-            },
-          },
-          xAxis: {
-            type: "value" as const,
-            name: timeCol.name,
-            nameLocation: "middle",
-            nameGap: 22,
-            splitLine: { show: false },
-            axisLine: { lineStyle: { color: chartAxis } },
-            axisLabel: { color: chartSubtleText },
-            nameTextStyle: { color: chartSubtleText, fontFamily: chartFontFamily },
-          },
-          yAxis: {
-            type: "value" as const,
-            name: col.name,
-            nameLocation: "middle",
-            nameGap: 34,
-            nameRotate: 90,
-            axisLine: { lineStyle: { color: chartAxis } },
-            axisLabel: { margin: 4, formatter: formatAxisTick, hideOverlap: true, color: chartSubtleText },
-            nameTextStyle: { color: chartSubtleText, fontFamily: chartFontFamily },
-            splitLine: { show: true, lineStyle: { color: chartGridLine } },
-          },
-          dataZoom: [
-            {
-              type: "inside",
-              xAxisIndex: 0,
-              zoomOnMouseWheel: "ctrl",
-              moveOnMouseWheel: false,
-              moveOnMouseMove: false,
-              zoomLock: true,
-            },
-          ],
-          series: [
-            {
-              type: "line" as const,
-              data,
-              symbol: "none",
-              connectNulls: false,
-              lineStyle: { width: 2.5, color: chartAccent, cap: "round", join: "round" },
-              emphasis: {
-                lineStyle: { width: 2.5, color: chartAccent, cap: "round", join: "round" },
-              },
-            },
-          ],
-        };
+              return {
+                textStyle: { fontFamily: chartFontFamily, color: chartText },
+                // Use a fixed left margin so all Y axes align visually across charts.
+                grid: { left: 68, right: 10, top: 8, bottom: 30, containLabel: false },
+                tooltip: {
+                  trigger: "axis" as const,
+                  axisPointer: { type: "line" as const },
+                  backgroundColor: tooltipBg,
+                  borderColor: tooltipBorder,
+                  borderWidth: 1,
+                  padding: 8,
+                  textStyle: { fontFamily: chartFontFamily, color: chartText },
+                  formatter: (params: any) => {
+                    const p = Array.isArray(params) ? params[0] : params;
+                    const value = Array.isArray(p?.value) ? p.value : [p?.value, null];
+                    const time = value[0] as number | null | undefined;
+                    const y = value[1] as number | null | undefined;
+
+                    const timeLabel = `${timeKind}: ${formatVal(time)}${
+                      timeUnit ? ` ${timeUnit}` : ""
+                    }`;
+                    const colLabel = `${colKind}: ${formatVal(y)}${
+                      colUnit ? ` ${colUnit}` : ""
+                    }`;
+
+                    return `${timeLabel}<br/>${colLabel}`;
+                  },
+                },
+                xAxis: {
+                  type: "value" as const,
+                  name: timeCol.name,
+                  nameLocation: "middle",
+                  nameGap: 22,
+                  splitLine: { show: false },
+                  axisLine: { lineStyle: { color: chartAxis } },
+                  axisLabel: { color: chartSubtleText },
+                  nameTextStyle: { color: chartSubtleText, fontFamily: chartFontFamily },
+                },
+                yAxis: {
+                  type: "value" as const,
+                  name: col.name,
+                  nameLocation: "middle",
+                  nameGap: 34,
+                  nameRotate: 90,
+                  axisLine: { lineStyle: { color: chartAxis } },
+                  axisLabel: { margin: 4, formatter: formatAxisTick, hideOverlap: true, color: chartSubtleText },
+                  nameTextStyle: { color: chartSubtleText, fontFamily: chartFontFamily },
+                  splitLine: { show: true, lineStyle: { color: chartGridLine } },
+                },
+                dataZoom: [
+                  {
+                    type: "inside" as const,
+                    xAxisIndex: 0,
+                    zoomOnMouseWheel: "ctrl" as const,
+                    moveOnMouseWheel: false,
+                    moveOnMouseMove: false,
+                    zoomLock: true,
+                  },
+                ],
+                series: [
+                  {
+                    type: "line" as const,
+                    data,
+                    symbol: "none" as const,
+                    connectNulls: false,
+                    lineStyle: { width: 2.5, color: chartAccent, cap: "round", join: "round" },
+                    emphasis: {
+                      lineStyle: { width: 2.5, color: chartAccent, cap: "round", join: "round" },
+                    },
+                  },
+                ],
+              };
+            })();
+
+        if (option == null) return null;
 
         return (
           <div
-            key={col.name}
+            key={selection.key}
             className="chart-grid-item"
+            ref={(el) => {
+              chartItemRefs.current[selection.key] = el;
+            }}
             onContextMenu={(e) => {
               e.preventDefault();
               setContextMenu({ x: e.clientX, y: e.clientY, chartIndex: index });
             }}
           >
-            <ReactECharts
+            <ReactEChartsCore
+              echarts={echarts}
               ref={setReactEChartsRef}
               option={option}
-              style={{ width: "100%", aspectRatio: "3/2", minHeight: 200 }}
-              onChartReady={handleChartReady}
+              style={{
+                width: "100%",
+                height: isMapChart ? "clamp(300px, 56vw, 740px)" : "clamp(200px, 44vw, 520px)",
+                minHeight: isMapChart ? MAP_CHART_MIN_HEIGHT : LINE_CHART_MIN_HEIGHT,
+              }}
+              onChartReady={(chart) => handleChartReady(chart, selection.kind)}
             />
           </div>
         );
