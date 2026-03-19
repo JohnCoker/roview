@@ -1,0 +1,14 @@
+---
+description: CSS appearance must stay Fluent UI/themed
+globs: "**/*.css"
+alwaysApply: false
+---
+
+# CSS appearance policy
+
+- Avoid adding theme-dependent appearance in CSS (`color`, `background`, `border-color`, `box-shadow` colors, hover/active colors).
+- Prefer Fluent UI `styles`/theming APIs in component code; let the active Fluent UI theme drive light/dark.
+- If CSS is necessary, keep it theme-neutral (layout/spacing/positioning) and do not override Fluent UI component selectors.
+- Do not use `!important` to win against Fluent UI styles.
+- If you need a color, implement it via Fluent UI theme tokens (or existing Fluent UI-provided CSS variables), not hard-coded hex/rgb values.
+- If you add styles which become orphaned, remove them.

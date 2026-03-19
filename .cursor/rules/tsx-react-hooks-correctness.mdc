@@ -1,0 +1,16 @@
+---
+description: React hooks correctness for TSX
+globs: "**/*.tsx"
+alwaysApply: false
+---
+
+# React hooks correctness (TSX)
+
+- Always follow the Rules of Hooks: don’t call hooks conditionally or inside loops.
+- For `useEffect`, ensure the dependency array includes every value from the effect scope that can change:
+  - Prefer adding missing deps to the array over suppressing lint with `eslint-disable` comments.
+  - If a lint suppression is truly necessary, keep it rare and explain why.
+- Avoid stale closures:
+  - If you need the latest value inside an async callback, include it in deps or use refs/functional state updates (`setX((prev) => ...)`).
+- Always provide cleanup in `useEffect` when you add listeners/timers/subscriptions (remove/unlisten in the cleanup function).
+- Prefer immutable updates for state/props-derived data (don’t mutate arrays/objects in place).

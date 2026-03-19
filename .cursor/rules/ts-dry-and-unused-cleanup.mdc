@@ -1,0 +1,17 @@
+---
+description: TypeScript best practices (DRY, remove unused)
+globs: "**/*.ts"
+alwaysApply: false
+---
+
+# TypeScript best principles
+
+- DRY: avoid copy/paste; extract shared logic into a small helper/module when it meaningfully reduces duplication (used by more than one consumer) AND it is genuinely general-purpose (not tied to one component/feature/domain).
+  - Keep a general-purpose utility module/file (e.g. `util.ts`) for generic helpers used in multiple files.
+  - For something specific to a single file (only relevant to one component/domain concept), keep it in that file (even if it feels “reusable”).
+- Red flag for over-extraction: if moving something into the shared module makes future edits harder (e.g. awkward names/imports or encoding chart/file/export-specific semantics into `util.ts`), keep it local instead.
+- Prefer reuse over “parallel implementations” of the same idea in different files.
+- Remove unused code:
+  - Delete unused imports, variables, parameters, functions, and dead branches.
+  - Remove unused constants/types and any code that becomes unreachable after your changes.
+- If you need to keep code temporarily, prefer a clear `TODO` with the reason (not commented-out blocks) and keep it minimal.

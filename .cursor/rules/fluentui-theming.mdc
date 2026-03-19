@@ -1,0 +1,37 @@
+---
+description: Use Fluent UI styling; respect native light/dark mode
+alwaysApply: true
+---
+
+# Fluent UI theming guidance
+
+- Prefer Fluent UI components and their styling APIs (`FluentProvider`, Fluent UI theme tokens, component `styles`/`className`/`style` props) instead of adding custom “appearance” CSS.
+- Avoid adding or modifying global/custom CSS files (e.g. `App.css`) for colors, backgrounds, typography, spacing, or hover/active states that duplicate Fluent UI behavior.
+- If you need a visual change, implement it via Fluent UI theming (use the active theme/tokens) rather than hard-coded hex/rgb values.
+- Exception: when generating “paper” artifacts for export (e.g. chart PNG/JPEG downloads), it is fine to use hard-coded export/background colors for readability/consistency; this should not affect on-screen UI theming.
+- On-screen UI: avoid hard-coded color literals (`#...`, `rgb()`, `hsl()`, etc.) in TSX inline styles or CSS for visible surfaces. Use Fluent UI `theme`/`tokens` values and component `styles` instead.
+- Ensure light and dark modes work natively:
+  - Don’t assume a single theme (always use theme-driven tokens).
+  - Don’t introduce CSS rules that prevent theme switching (e.g. fixed background/text colors without theme tokens).
+- Avoid overriding Fluent UI component styles with custom CSS selectors or `!important`; prefer Fluent UI’s built-in theming/`styles` APIs.
+
+# Quick examples
+- Change a button look using Fluent UI’s `DefaultButton` + `styles` / theme tokens, not `button { background: ... }` in CSS.
+- For page backgrounds, use Fluent UI theme tokens / layout components rather than a hard-coded `body { background: ... }`.
+
+# Styling decision guardrails
+
+- If the request is “make this Fluent UI component look different”: use Fluent UI’s styling props/APIs (and theme tokens); do not add/update global CSS (like `App.css`).
+- If the request is “make the page/app look different”: change it via Fluent UI theme tokens or layout components; only use CSS for theme-neutral structure (no hard-coded colors).
+- If Fluent UI doesn’t cover the exact need: ask what component/token to base it on, then implement via Fluent UI theming rather than raw appearance CSS.
+- If you are considering editing any `*.css` file (including `src/App.css`):
+  - Avoid theme-dependent appearance (colors, backgrounds, border/box-shadow colors, hover/active colors).
+  - Prefer Fluent UI theming tokens / `styles` APIs and do not override Fluent UI component selectors.
+  - Do not use `!important` to win against Fluent UI.
+  - If CSS is unavoidable, restrict changes to theme-neutral structure (layout/spacing/positioning) only.
+
+# Windows is Primary
+
+While it's nice to be able to run on macOS and Linux, this app is primarily targeted for Windows. If there is a trade-off between naturalness on Windows vs another platform, prefer Windows.
+
+This is meant to be a desktop app, so no concessions to the small screen need to be made.
