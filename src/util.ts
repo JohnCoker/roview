@@ -63,8 +63,18 @@ export const MAP_TRACE_SELECTION = "__map_trace__";
 /** User-facing label for the location trace map chart. */
 export const MAP_TRACE_LABEL = "Map Trace";
 
+/** Special chart selection ID for longitude (X) vs latitude (Y) line chart. */
+export const LAT_LONG_LINE_SELECTION = "__lat_long_line__";
+
+/** User-facing label for the lat/long line chart. */
+export const LAT_LONG_LINE_LABEL = "Latitude vs Longitude";
+
 export function isMapTraceSelection(name: string): boolean {
   return name === MAP_TRACE_SELECTION;
+}
+
+export function isLatLongLineSelection(name: string): boolean {
+  return name === LAT_LONG_LINE_SELECTION;
 }
 
 /**

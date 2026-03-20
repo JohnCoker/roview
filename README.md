@@ -19,8 +19,9 @@ and minimal chrome.
 5. **Explore the charts**:
    - Scroll vertically to browse all charts.
    - Hover over a chart to see the Time and that column’s value at the nearest point.
-6. **Trace the course on a Map**:
-   - Use **View → Map Trace** to turn on/off a view of the location over time.
+6. **Trace the course**:
+   - Use **View → Map Trace** to turn on/off a map of the location over time.
+   - **View → Latitude vs Longitude** adds a line chart with longitude on the horizontal axis and latitude on the vertical.
 7. **Printing / Export**:
    - Charts and the map can be exported as images using the **File → Export Charts…**.
 

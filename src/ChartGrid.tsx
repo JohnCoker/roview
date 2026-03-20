@@ -15,8 +15,11 @@ import {
   EXPORT_EXT,
   EXPORT_FORMAT_LABEL,
   CHART_EXPORT_DATA_URL_OPTS,
+  LAT_LONG_LINE_LABEL,
+  LAT_LONG_LINE_SELECTION,
   MAP_TRACE_LABEL,
   MAP_TRACE_SELECTION,
+  isLatLongLineSelection,
   isMapTraceSelection,
 } from "./util";
 
@@ -34,7 +37,8 @@ export interface ChartGridRef {
 type ReactEChartsRef = { getEchartsInstance: () => ECharts };
 type LineChartSelection = { key: string; label: string; kind: "line"; col: Col };
 type MapChartSelection = { key: string; label: string; kind: "map" };
-type ChartSelection = LineChartSelection | MapChartSelection;
+type LatLongLineChartSelection = { key: string; label: string; kind: "latLong" };
+type ChartSelection = LineChartSelection | MapChartSelection | LatLongLineChartSelection;
 
 const WORLD_MAP_NAME = "roview-world";
 const LINE_CHART_MIN_HEIGHT = 200;
@@ -73,6 +77,11 @@ export const ChartGrid = forwardRef<ChartGridRef, ChartGridProps>(
     if (isMapTraceSelection(name)) {
       return runFile.locationColumns() != null
         ? [{ key: MAP_TRACE_SELECTION, label: MAP_TRACE_LABEL, kind: "map" as const }]
+        : [];
+    }
+    if (isLatLongLineSelection(name)) {
+      return runFile.locationColumns() != null
+        ? [{ key: LAT_LONG_LINE_SELECTION, label: LAT_LONG_LINE_LABEL, kind: "latLong" as const }]
         : [];
     }
     const col = runFile.getColumn(name);
@@ -193,7 +202,7 @@ export const ChartGrid = forwardRef<ChartGridRef, ChartGridProps>(
     }
   };
 
-  const handleChartReady = (chart: ECharts, kind: "line" | "map") => {
+  const handleChartReady = (chart: ECharts, kind: "line" | "map" | "latLong") => {
     if (kind !== "line") return;
     chartRefs.current.push(chart);
     if (lineChartCount > 1 && chartRefs.current.length === lineChartCount) {
@@ -247,163 +256,256 @@ export const ChartGrid = forwardRef<ChartGridRef, ChartGridProps>(
       )}
       {chartSelections.map((selection, index) => {
         const isMapChart = selection.kind === "map";
-        const option = isMapChart
-          ? (() => {
-              const locationColumns = runFile.locationColumns();
-              if (locationColumns == null) return null;
-              const latValues = runFile.getColumnValues(locationColumns.lat.name);
-              const longValues = runFile.getColumnValues(locationColumns.long.name);
-              const points = latValues
-                .map((lat, i) => {
-                  const long = longValues[i];
-                  const time = timeValues[i];
-                  if (lat == null || long == null) return null;
-                  return { value: [normalizeLongitudeDegrees(long), lat, time], rawLong: long };
-                })
-                .filter((point): point is { value: [number, number, number | null]; rawLong: number } => point != null);
-              const latKind = locationColumns.lat.kind();
-              const latUnit = locationColumns.lat.unit();
-              const longKind = locationColumns.long.kind();
-              const longUnit = locationColumns.long.unit();
-              const mapFill = theme.colorNeutralBackground3 ?? theme.colorNeutralBackground2;
-              const mapHighlight = theme.colorNeutralBackground4 ?? mapFill;
+        const option = (() => {
+          if (selection.kind === "map") {
+            const locationColumns = runFile.locationColumns();
+            if (locationColumns == null) return null;
+            const latValues = runFile.getColumnValues(locationColumns.lat.name);
+            const longValues = runFile.getColumnValues(locationColumns.long.name);
+            const points = latValues
+              .map((lat, i) => {
+                const long = longValues[i];
+                const time = timeValues[i];
+                if (lat == null || long == null) return null;
+                return { value: [normalizeLongitudeDegrees(long), lat, time], rawLong: long };
+              })
+              .filter((point): point is { value: [number, number, number | null]; rawLong: number } => point != null);
+            const latKind = locationColumns.lat.kind();
+            const latUnit = locationColumns.lat.unit();
+            const longKind = locationColumns.long.kind();
+            const longUnit = locationColumns.long.unit();
+            const mapFill = theme.colorNeutralBackground3 ?? theme.colorNeutralBackground2;
+            const mapHighlight = theme.colorNeutralBackground4 ?? mapFill;
 
-              return {
+            return {
+              textStyle: { fontFamily: chartFontFamily, color: chartText },
+              tooltip: {
+                trigger: "item" as const,
+                backgroundColor: tooltipBg,
+                borderColor: tooltipBorder,
+                borderWidth: 1,
+                padding: 8,
                 textStyle: { fontFamily: chartFontFamily, color: chartText },
-                tooltip: {
-                  trigger: "item" as const,
-                  backgroundColor: tooltipBg,
-                  borderColor: tooltipBorder,
-                  borderWidth: 1,
-                  padding: 8,
-                  textStyle: { fontFamily: chartFontFamily, color: chartText },
-                  formatter: (params: any) => {
-                    const value = Array.isArray(params?.value) ? params.value : [];
-                    const rawLong = (params?.data?.rawLong ?? value[0]) as number | null | undefined;
-                    const lat = value[1] as number | null | undefined;
-                    const time = value[2] as number | null | undefined;
+                formatter: (params: any) => {
+                  const value = Array.isArray(params?.value) ? params.value : [];
+                  const rawLong = (params?.data?.rawLong ?? value[0]) as number | null | undefined;
+                  const lat = value[1] as number | null | undefined;
+                  const time = value[2] as number | null | undefined;
 
-                    const timeLabel = `${timeCol.kind()}: ${formatVal(time)}${
-                      timeCol.unit() ? ` ${timeCol.unit()}` : ""
-                    }`;
-                    const latLabel = `${latKind}: ${formatVal(lat)}${
-                      latUnit ? ` ${latUnit}` : ""
-                    }`;
-                    const longLabel = `${longKind}: ${formatVal(rawLong)}${
-                      longUnit ? ` ${longUnit}` : ""
-                    }`;
-                    return `${timeLabel}<br/>${latLabel}<br/>${longLabel}`;
-                  },
+                  const timeLabel = `${timeCol.kind()}: ${formatVal(time)}${
+                    timeCol.unit() ? ` ${timeCol.unit()}` : ""
+                  }`;
+                  const latLabel = `${latKind}: ${formatVal(lat)}${
+                    latUnit ? ` ${latUnit}` : ""
+                  }`;
+                  const longLabel = `${longKind}: ${formatVal(rawLong)}${
+                    longUnit ? ` ${longUnit}` : ""
+                  }`;
+                  return `${timeLabel}<br/>${latLabel}<br/>${longLabel}`;
                 },
-                geo: {
-                  map: WORLD_MAP_NAME,
-                  left: 8,
-                  right: 8,
-                  top: 8,
-                  bottom: 8,
-                  roam: "move",
-                  scaleLimit: { min: 1, max: 20 },
-                  itemStyle: { areaColor: mapFill, borderColor: chartAxis },
-                  emphasis: { itemStyle: { areaColor: mapHighlight } },
+              },
+              geo: {
+                map: WORLD_MAP_NAME,
+                left: 8,
+                right: 8,
+                top: 8,
+                bottom: 8,
+                roam: "move",
+                scaleLimit: { min: 1, max: 20 },
+                itemStyle: { areaColor: mapFill, borderColor: chartAxis },
+                emphasis: { itemStyle: { areaColor: mapHighlight } },
+              },
+              series: [
+                {
+                  type: "scatter" as const,
+                  coordinateSystem: "geo" as const,
+                  data: points,
+                  symbolSize: 4,
+                  z: 3,
+                  itemStyle: { color: chartAccent, opacity: 1 },
                 },
-                series: [
-                  {
-                    type: "scatter" as const,
-                    coordinateSystem: "geo" as const,
-                    data: points,
-                    symbolSize: 4,
-                    z: 3,
-                    itemStyle: { color: chartAccent, opacity: 1 },
-                  },
-                ],
-              };
-            })()
-          : (() => {
-              const col = selection.col;
-              if (col == null) return null;
-              const yValues = runFile.getColumnValues(col.name);
-              const data: (number | null)[][] = timeValues
-                .map((t, i) => (t != null ? [t, yValues[i] ?? null] : null))
-                .filter((p): p is [number, number | null] => p != null);
+              ],
+            };
+          }
+          if (selection.kind === "latLong") {
+            const locationColumns = runFile.locationColumns();
+            if (locationColumns == null) return null;
+            const latValues = runFile.getColumnValues(locationColumns.lat.name);
+            const longValues = runFile.getColumnValues(locationColumns.long.name);
+            const data = latValues
+              .map((lat, i) => {
+                const long = longValues[i];
+                const time = timeValues[i];
+                if (lat == null || long == null) return null;
+                return {
+                  value: [long, lat] as [number, number],
+                  rawLong: long,
+                  time,
+                };
+              })
+              .filter(
+                (p): p is { value: [number, number]; rawLong: number; time: number | null } =>
+                  p != null,
+              );
 
-              const timeKind = timeCol.kind();
-              const timeUnit = timeCol.unit();
-              const colKind = col.kind();
-              const colUnit = col.unit();
+            const timeKind = timeCol.kind();
+            const timeUnit = timeCol.unit();
+            const latKind = locationColumns.lat.kind();
+            const latUnit = locationColumns.lat.unit();
+            const longKind = locationColumns.long.kind();
+            const longUnit = locationColumns.long.unit();
 
-              return {
+            return {
+              textStyle: { fontFamily: chartFontFamily, color: chartText },
+              grid: { left: 68, right: 10, top: 8, bottom: 30, containLabel: false },
+              tooltip: {
+                trigger: "axis" as const,
+                axisPointer: { type: "line" as const },
+                backgroundColor: tooltipBg,
+                borderColor: tooltipBorder,
+                borderWidth: 1,
+                padding: 8,
                 textStyle: { fontFamily: chartFontFamily, color: chartText },
-                // Use a fixed left margin so all Y axes align visually across charts.
-                grid: { left: 68, right: 10, top: 8, bottom: 30, containLabel: false },
-                tooltip: {
-                  trigger: "axis" as const,
-                  axisPointer: { type: "line" as const },
-                  backgroundColor: tooltipBg,
-                  borderColor: tooltipBorder,
-                  borderWidth: 1,
-                  padding: 8,
-                  textStyle: { fontFamily: chartFontFamily, color: chartText },
-                  formatter: (params: any) => {
-                    const p = Array.isArray(params) ? params[0] : params;
-                    const value = Array.isArray(p?.value) ? p.value : [p?.value, null];
-                    const time = value[0] as number | null | undefined;
-                    const y = value[1] as number | null | undefined;
+                formatter: (params: any) => {
+                  const p = Array.isArray(params) ? params[0] : params;
+                  const value = Array.isArray(p?.value) ? p.value : [p?.value, null];
+                  const longV = (p?.data?.rawLong ?? value[0]) as number | null | undefined;
+                  const latV = value[1] as number | null | undefined;
+                  const t = p?.data?.time as number | null | undefined;
 
-                    const timeLabel = `${timeKind}: ${formatVal(time)}${
-                      timeUnit ? ` ${timeUnit}` : ""
-                    }`;
-                    const colLabel = `${colKind}: ${formatVal(y)}${
-                      colUnit ? ` ${colUnit}` : ""
-                    }`;
-
-                    return `${timeLabel}<br/>${colLabel}`;
-                  },
+                  const timeLabel = `${timeKind}: ${formatVal(t)}${timeUnit ? ` ${timeUnit}` : ""}`;
+                  const longLabel = `${longKind}: ${formatVal(longV)}${longUnit ? ` ${longUnit}` : ""}`;
+                  const latLabel = `${latKind}: ${formatVal(latV)}${latUnit ? ` ${latUnit}` : ""}`;
+                  return `${timeLabel}<br/>${longLabel}<br/>${latLabel}`;
                 },
-                xAxis: {
-                  type: "value" as const,
-                  name: timeCol.name,
-                  nameLocation: "middle",
-                  nameGap: 22,
-                  splitLine: { show: false },
-                  axisLine: { lineStyle: { color: chartAxis } },
-                  axisLabel: { color: chartSubtleText },
-                  nameTextStyle: { color: chartSubtleText, fontFamily: chartFontFamily },
+              },
+              xAxis: {
+                type: "value" as const,
+                name: locationColumns.long.name,
+                nameLocation: "middle",
+                nameGap: 22,
+                splitLine: { show: false },
+                axisLine: { lineStyle: { color: chartAxis } },
+                axisLabel: { margin: 4, formatter: formatAxisTick, hideOverlap: true, color: chartSubtleText },
+                nameTextStyle: { color: chartSubtleText, fontFamily: chartFontFamily },
+              },
+              yAxis: {
+                type: "value" as const,
+                name: locationColumns.lat.name,
+                nameLocation: "middle",
+                nameGap: 34,
+                nameRotate: 90,
+                axisLine: { lineStyle: { color: chartAxis } },
+                axisLabel: { margin: 4, formatter: formatAxisTick, hideOverlap: true, color: chartSubtleText },
+                nameTextStyle: { color: chartSubtleText, fontFamily: chartFontFamily },
+                splitLine: { show: true, lineStyle: { color: chartGridLine } },
+              },
+              dataZoom: [
+                {
+                  type: "inside" as const,
+                  xAxisIndex: 0,
+                  zoomOnMouseWheel: "ctrl" as const,
+                  moveOnMouseWheel: false,
+                  moveOnMouseMove: false,
+                  zoomLock: true,
                 },
-                yAxis: {
-                  type: "value" as const,
-                  name: col.name,
-                  nameLocation: "middle",
-                  nameGap: 34,
-                  nameRotate: 90,
-                  axisLine: { lineStyle: { color: chartAxis } },
-                  axisLabel: { margin: 4, formatter: formatAxisTick, hideOverlap: true, color: chartSubtleText },
-                  nameTextStyle: { color: chartSubtleText, fontFamily: chartFontFamily },
-                  splitLine: { show: true, lineStyle: { color: chartGridLine } },
-                },
-                dataZoom: [
-                  {
-                    type: "inside" as const,
-                    xAxisIndex: 0,
-                    zoomOnMouseWheel: "ctrl" as const,
-                    moveOnMouseWheel: false,
-                    moveOnMouseMove: false,
-                    zoomLock: true,
-                  },
-                ],
-                series: [
-                  {
-                    type: "line" as const,
-                    data,
-                    symbol: "none" as const,
-                    connectNulls: false,
+              ],
+              series: [
+                {
+                  type: "line" as const,
+                  data,
+                  symbol: "none" as const,
+                  connectNulls: false,
+                  lineStyle: { width: 2.5, color: chartAccent, cap: "round", join: "round" },
+                  emphasis: {
                     lineStyle: { width: 2.5, color: chartAccent, cap: "round", join: "round" },
-                    emphasis: {
-                      lineStyle: { width: 2.5, color: chartAccent, cap: "round", join: "round" },
-                    },
                   },
-                ],
-              };
-            })();
+                },
+              ],
+            };
+          }
+          const col = selection.col;
+          if (col == null) return null;
+          const yValues = runFile.getColumnValues(col.name);
+          const data: (number | null)[][] = timeValues
+            .map((t, i) => (t != null ? [t, yValues[i] ?? null] : null))
+            .filter((p): p is [number, number | null] => p != null);
+
+          const timeKind = timeCol.kind();
+          const timeUnit = timeCol.unit();
+          const colKind = col.kind();
+          const colUnit = col.unit();
+
+          return {
+            textStyle: { fontFamily: chartFontFamily, color: chartText },
+            grid: { left: 68, right: 10, top: 8, bottom: 30, containLabel: false },
+            tooltip: {
+              trigger: "axis" as const,
+              axisPointer: { type: "line" as const },
+              backgroundColor: tooltipBg,
+              borderColor: tooltipBorder,
+              borderWidth: 1,
+              padding: 8,
+              textStyle: { fontFamily: chartFontFamily, color: chartText },
+              formatter: (params: any) => {
+                const p = Array.isArray(params) ? params[0] : params;
+                const value = Array.isArray(p?.value) ? p.value : [p?.value, null];
+                const time = value[0] as number | null | undefined;
+                const y = value[1] as number | null | undefined;
+
+                const timeLabel = `${timeKind}: ${formatVal(time)}${
+                  timeUnit ? ` ${timeUnit}` : ""
+                }`;
+                const colLabel = `${colKind}: ${formatVal(y)}${colUnit ? ` ${colUnit}` : ""}`;
+
+                return `${timeLabel}<br/>${colLabel}`;
+              },
+            },
+            xAxis: {
+              type: "value" as const,
+              name: timeCol.name,
+              nameLocation: "middle",
+              nameGap: 22,
+              splitLine: { show: false },
+              axisLine: { lineStyle: { color: chartAxis } },
+              axisLabel: { color: chartSubtleText },
+              nameTextStyle: { color: chartSubtleText, fontFamily: chartFontFamily },
+            },
+            yAxis: {
+              type: "value" as const,
+              name: col.name,
+              nameLocation: "middle",
+              nameGap: 34,
+              nameRotate: 90,
+              axisLine: { lineStyle: { color: chartAxis } },
+              axisLabel: { margin: 4, formatter: formatAxisTick, hideOverlap: true, color: chartSubtleText },
+              nameTextStyle: { color: chartSubtleText, fontFamily: chartFontFamily },
+              splitLine: { show: true, lineStyle: { color: chartGridLine } },
+            },
+            dataZoom: [
+              {
+                type: "inside" as const,
+                xAxisIndex: 0,
+                zoomOnMouseWheel: "ctrl" as const,
+                moveOnMouseWheel: false,
+                moveOnMouseMove: false,
+                zoomLock: true,
+              },
+            ],
+            series: [
+              {
+                type: "line" as const,
+                data,
+                symbol: "none" as const,
+                connectNulls: false,
+                lineStyle: { width: 2.5, color: chartAccent, cap: "round", join: "round" },
+                emphasis: {
+                  lineStyle: { width: 2.5, color: chartAccent, cap: "round", join: "round" },
+                },
+              },
+            ],
+          };
+        })();
 
         if (option == null) return null;
 

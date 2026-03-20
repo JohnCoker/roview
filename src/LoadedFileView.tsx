@@ -6,7 +6,14 @@ import type { Theme } from "@fluentui/react-theme";
 import { ColumnSelectDialog } from "./ColumnSelectDialog";
 import { ChartGrid, type ChartGridRef } from "./ChartGrid";
 import { ExportChartsDialog } from "./ExportChartsDialog";
-import { MAP_TRACE_LABEL, MAP_TRACE_SELECTION, isMapTraceSelection } from "./util";
+import {
+  LAT_LONG_LINE_LABEL,
+  LAT_LONG_LINE_SELECTION,
+  MAP_TRACE_LABEL,
+  MAP_TRACE_SELECTION,
+  isLatLongLineSelection,
+  isMapTraceSelection,
+} from "./util";
 
 export interface LoadedFileViewProps {
   runFile: RunFile;
@@ -29,6 +36,7 @@ export function LoadedFileView({
   const [scrollTargetKey, setScrollTargetKey] = useState<string | null>(null);
   const chartNames = selectedColumns.flatMap((name) => {
     if (isMapTraceSelection(name)) return locationColumns != null ? [MAP_TRACE_LABEL] : [];
+    if (isLatLongLineSelection(name)) return locationColumns != null ? [LAT_LONG_LINE_LABEL] : [];
     return runFile.getColumn(name) != null ? [name] : [];
   });
 
@@ -51,14 +59,17 @@ export function LoadedFileView({
 
   useEffect(() => {
     const enabled = locationColumns != null;
-    invoke("set_map_trace_enabled", { enabled }).catch(() => {});
+    invoke("set_location_enabled", { enabled }).catch(() => {});
     return () => {
-      invoke("set_map_trace_enabled", { enabled: false }).catch(() => {});
+      invoke("set_location_enabled", { enabled: false }).catch(() => {});
     };
   }, [locationColumns?.lat.name, locationColumns?.long.name]);
 
   useEffect(() => {
     if (!selectedColumns.includes(MAP_TRACE_SELECTION) && scrollTargetKey === MAP_TRACE_SELECTION) {
+      setScrollTargetKey(null);
+    }
+    if (!selectedColumns.includes(LAT_LONG_LINE_SELECTION) && scrollTargetKey === LAT_LONG_LINE_SELECTION) {
       setScrollTargetKey(null);
     }
   }, [scrollTargetKey, selectedColumns]);
@@ -85,11 +96,22 @@ export function LoadedFileView({
       setScrollTargetKey(MAP_TRACE_SELECTION);
       onSelectionChange([...selectedColumns, MAP_TRACE_SELECTION]);
     });
+    const unlistenLatLongLine = listen("view-lat-long-line", () => {
+      if (locationColumns == null) return;
+      if (selectedColumns.includes(LAT_LONG_LINE_SELECTION)) {
+        setScrollTargetKey(null);
+        onSelectionChange(selectedColumns.filter((name) => name !== LAT_LONG_LINE_SELECTION));
+        return;
+      }
+      setScrollTargetKey(LAT_LONG_LINE_SELECTION);
+      onSelectionChange([...selectedColumns, LAT_LONG_LINE_SELECTION]);
+    });
     return () => {
       unlistenFirst3.then((fn) => fn());
       unlistenAll.then((fn) => fn());
       unlistenSelect.then((fn) => fn());
       unlistenMapTrace.then((fn) => fn());
+      unlistenLatLongLine.then((fn) => fn());
     };
   }, [dataColumns, locationColumns, onSelectionChange, selectedColumns]);
 

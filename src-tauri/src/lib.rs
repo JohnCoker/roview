@@ -15,7 +15,7 @@ pub struct AppState {
     pub pending_open_files: RwLock<Vec<PathBuf>>,
     pub export_charts_enabled: RwLock<bool>,
     pub view_columns_enabled: RwLock<bool>,
-    pub map_trace_enabled: RwLock<bool>,
+    pub location_enabled: RwLock<bool>,
 }
 
 fn build_file_submenu(
@@ -72,8 +72,8 @@ fn build_app_menu(handle: &tauri::AppHandle, state: &AppState) -> tauri::Result<
         .read()
         .map(|g| *g)
         .unwrap_or(false);
-    let map_trace_enabled = state
-        .map_trace_enabled
+    let location_enabled = state
+        .location_enabled
         .read()
         .map(|g| *g)
         .unwrap_or(false);
@@ -84,7 +84,10 @@ fn build_app_menu(handle: &tauri::AppHandle, state: &AppState) -> tauri::Result<
     let select_columns_item =
         MenuItemBuilder::with_id("view-select-columns", "Select Columns…").enabled(view_enabled).build(handle)?;
     let map_trace_item =
-        MenuItemBuilder::with_id("view-map-trace", "Map Trace").enabled(map_trace_enabled).build(handle)?;
+        MenuItemBuilder::with_id("view-map-trace", "Map Trace").enabled(location_enabled).build(handle)?;
+    let lat_long_line_item = MenuItemBuilder::with_id("view-lat-long-line", "Latitude vs Longitude")
+        .enabled(location_enabled)
+        .build(handle)?;
 
     let view_submenu = SubmenuBuilder::with_id(handle, "view", "View")
         .item(&first_three_item)
@@ -92,6 +95,7 @@ fn build_app_menu(handle: &tauri::AppHandle, state: &AppState) -> tauri::Result<
         .item(&select_columns_item)
         .separator()
         .item(&map_trace_item)
+        .item(&lat_long_line_item)
         .build()?;
 
     if cfg!(target_os = "macos") {
@@ -184,13 +188,13 @@ fn set_view_columns_enabled(
 }
 
 #[tauri::command]
-fn set_map_trace_enabled(
+fn set_location_enabled(
     enabled: bool,
     app: tauri::AppHandle,
     state: tauri::State<Arc<AppState>>,
 ) -> Result<(), String> {
     state
-        .map_trace_enabled
+        .location_enabled
         .write()
         .map(|mut g| *g = enabled)
         .map_err(|e| e.to_string())?;
@@ -243,7 +247,7 @@ pub fn run() {
             add_recent,
             set_export_charts_enabled,
             set_view_columns_enabled,
-            set_map_trace_enabled,
+            set_location_enabled,
         ])
         .setup(move |app| {
             // Load persistent recents into state
@@ -355,6 +359,12 @@ pub fn run() {
                 if id == "view-map-trace" {
                     if let Some(w) = app_handle.get_webview_window("main") {
                         let _ = w.emit("view-map-trace", ());
+                    }
+                    return;
+                }
+                if id == "view-lat-long-line" {
+                    if let Some(w) = app_handle.get_webview_window("main") {
+                        let _ = w.emit("view-lat-long-line", ());
                     }
                     return;
                 }
