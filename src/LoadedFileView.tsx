@@ -41,11 +41,17 @@ export function LoadedFileView({
   });
 
   useEffect(() => {
-    const unlisten = listen("menu-export-charts", () => {
-      setShowExportDialog(true);
-    });
+    let cancelled = false;
+    let unlisten: (() => void) | undefined;
+    (async () => {
+      unlisten = await listen("menu-export-charts", () => {
+        setShowExportDialog(true);
+      });
+      if (cancelled) unlisten();
+    })();
     return () => {
-      unlisten.then((fn) => fn());
+      cancelled = true;
+      unlisten?.();
     };
   }, []);
 
@@ -58,14 +64,6 @@ export function LoadedFileView({
   }, [selectedColumns.length]);
 
   useEffect(() => {
-    const enabled = locationColumns != null;
-    invoke("set_location_enabled", { enabled }).catch(() => {});
-    return () => {
-      invoke("set_location_enabled", { enabled: false }).catch(() => {});
-    };
-  }, [locationColumns?.lat.name, locationColumns?.long.name]);
-
-  useEffect(() => {
     if (!selectedColumns.includes(MAP_TRACE_SELECTION) && scrollTargetKey === MAP_TRACE_SELECTION) {
       setScrollTargetKey(null);
     }
@@ -75,43 +73,51 @@ export function LoadedFileView({
   }, [scrollTargetKey, selectedColumns]);
 
   useEffect(() => {
-    const unlistenFirst3 = listen("view-first-3-columns", () => {
-      const next = dataColumns.slice(0, 3).map((c) => c.name);
-      onSelectionChange(next);
-    });
-    const unlistenAll = listen("view-all-columns", () => {
-      const next = dataColumns.map((c) => c.name);
-      onSelectionChange(next);
-    });
-    const unlistenSelect = listen("view-select-columns", () => {
-      setColumnDialogOpen(true);
-    });
-    const unlistenMapTrace = listen("view-map-trace", () => {
-      if (locationColumns == null) return;
-      if (selectedColumns.includes(MAP_TRACE_SELECTION)) {
-        setScrollTargetKey(null);
-        onSelectionChange(selectedColumns.filter((name) => name !== MAP_TRACE_SELECTION));
+    let cancelled = false;
+    let unlisteners: (() => void)[] = [];
+    (async () => {
+      const fns = await Promise.all([
+        listen("view-first-3-columns", () => {
+          const next = dataColumns.slice(0, 3).map((c) => c.name);
+          onSelectionChange(next);
+        }),
+        listen("view-all-columns", () => {
+          const next = dataColumns.map((c) => c.name);
+          onSelectionChange(next);
+        }),
+        listen("view-select-columns", () => {
+          setColumnDialogOpen(true);
+        }),
+        listen("view-map-trace", () => {
+          if (locationColumns == null) return;
+          if (selectedColumns.includes(MAP_TRACE_SELECTION)) {
+            setScrollTargetKey(null);
+            onSelectionChange(selectedColumns.filter((name) => name !== MAP_TRACE_SELECTION));
+            return;
+          }
+          setScrollTargetKey(MAP_TRACE_SELECTION);
+          onSelectionChange([...selectedColumns, MAP_TRACE_SELECTION]);
+        }),
+        listen("view-lat-long-line", () => {
+          if (locationColumns == null) return;
+          if (selectedColumns.includes(LAT_LONG_LINE_SELECTION)) {
+            setScrollTargetKey(null);
+            onSelectionChange(selectedColumns.filter((name) => name !== LAT_LONG_LINE_SELECTION));
+            return;
+          }
+          setScrollTargetKey(LAT_LONG_LINE_SELECTION);
+          onSelectionChange([...selectedColumns, LAT_LONG_LINE_SELECTION]);
+        }),
+      ]);
+      if (cancelled) {
+        fns.forEach((u) => u());
         return;
       }
-      setScrollTargetKey(MAP_TRACE_SELECTION);
-      onSelectionChange([...selectedColumns, MAP_TRACE_SELECTION]);
-    });
-    const unlistenLatLongLine = listen("view-lat-long-line", () => {
-      if (locationColumns == null) return;
-      if (selectedColumns.includes(LAT_LONG_LINE_SELECTION)) {
-        setScrollTargetKey(null);
-        onSelectionChange(selectedColumns.filter((name) => name !== LAT_LONG_LINE_SELECTION));
-        return;
-      }
-      setScrollTargetKey(LAT_LONG_LINE_SELECTION);
-      onSelectionChange([...selectedColumns, LAT_LONG_LINE_SELECTION]);
-    });
+      unlisteners = fns;
+    })();
     return () => {
-      unlistenFirst3.then((fn) => fn());
-      unlistenAll.then((fn) => fn());
-      unlistenSelect.then((fn) => fn());
-      unlistenMapTrace.then((fn) => fn());
-      unlistenLatLongLine.then((fn) => fn());
+      cancelled = true;
+      unlisteners.forEach((u) => u());
     };
   }, [dataColumns, locationColumns, onSelectionChange, selectedColumns]);
 

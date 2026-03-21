@@ -4,11 +4,34 @@
     <meta charset="UTF-8" />
     <link rel="icon" type="image/svg+xml" href="/vite.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Tauri + React + Typescript</title>
+    <title>RASOrbit Viewer</title>
+    <style>
+      html,
+      body {
+        margin: 0;
+        height: 100%;
+      }
+      #root {
+        min-height: 100%;
+      }
+      /* Shown until React replaces #root; uses system colors (no theme tokens yet). */
+      .app-initial-load {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        min-height: 100vh;
+        margin: 0;
+        font: 14px system-ui, sans-serif;
+        background: Canvas;
+        color: CanvasText;
+      }
+    </style>
   </head>
 
   <body>
-    <div id="root"></div>
+    <div id="root">
+      <p class="app-initial-load">RASOrbit Viewer</p>
+    </div>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>

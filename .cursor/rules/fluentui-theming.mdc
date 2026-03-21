@@ -5,30 +5,28 @@ alwaysApply: true
 
 # Fluent UI theming guidance
 
-- Prefer Fluent UI components and their styling APIs (`FluentProvider`, Fluent UI theme tokens, component `styles`/`className`/`style` props) instead of adding custom “appearance” CSS.
-- Avoid adding or modifying global/custom CSS files (e.g. `App.css`) for colors, backgrounds, typography, spacing, or hover/active states that duplicate Fluent UI behavior.
-- If you need a visual change, implement it via Fluent UI theming (use the active theme/tokens) rather than hard-coded hex/rgb values.
-- Exception: when generating “paper” artifacts for export (e.g. chart PNG/JPEG downloads), it is fine to use hard-coded export/background colors for readability/consistency; this should not affect on-screen UI theming.
-- On-screen UI: avoid hard-coded color literals (`#...`, `rgb()`, `hsl()`, etc.) in TSX inline styles or CSS for visible surfaces. Use Fluent UI `theme`/`tokens` values and component `styles` instead.
-- Ensure light and dark modes work natively:
-  - Don’t assume a single theme (always use theme-driven tokens).
-  - Don’t introduce CSS rules that prevent theme switching (e.g. fixed background/text colors without theme tokens).
-- Avoid overriding Fluent UI component styles with custom CSS selectors or `!important`; prefer Fluent UI’s built-in theming/`styles` APIs.
+## Intent
 
-# Quick examples
-- Change a button look using Fluent UI’s `DefaultButton` + `styles` / theme tokens, not `button { background: ... }` in CSS.
-- For page backgrounds, use Fluent UI theme tokens / layout components rather than a hard-coded `body { background: ... }`.
+**Do not hard-code colors for appearance anywhere**—TSX, CSS, app config (e.g. Tauri), native window APIs, or Rust UI chrome—unless an explicit exception below applies. That means no `#…`, `rgb()`, `hsl()`, or other fixed palette values for visible surfaces; use the active Fluent theme and tokens (`theme`, `tokens`, `webLightTheme` / `webDarkTheme`, component `styles`, etc.) so light and dark mode stay correct.
 
-# Styling decision guardrails
+**Exception:** Hard-coded colors are OK only for **exported “paper” artifacts** (e.g. chart PNG/JPEG) where a fixed palette is intentional and must not track the on-screen theme.
 
-- If the request is “make this Fluent UI component look different”: use Fluent UI’s styling props/APIs (and theme tokens); do not add/update global CSS (like `App.css`).
-- If the request is “make the page/app look different”: change it via Fluent UI theme tokens or layout components; only use CSS for theme-neutral structure (no hard-coded colors).
-- If Fluent UI doesn’t cover the exact need: ask what component/token to base it on, then implement via Fluent UI theming rather than raw appearance CSS.
-- If you are considering editing any `*.css` file (including `src/App.css`):
-  - Avoid theme-dependent appearance (colors, backgrounds, border/box-shadow colors, hover/active colors).
-  - Prefer Fluent UI theming tokens / `styles` APIs and do not override Fluent UI component selectors.
-  - Do not use `!important` to win against Fluent UI.
-  - If CSS is unavoidable, restrict changes to theme-neutral structure (layout/spacing/positioning) only.
+## How to implement
+
+- Prefer Fluent UI components and their styling APIs over custom appearance CSS.
+- Avoid global/custom CSS (including `App.css`) for colors, backgrounds, typography, spacing, or hover/active states that duplicate Fluent; use tokens and component APIs instead.
+- If CSS is needed, use it for **theme-neutral structure** (layout, spacing, positioning) only—not theme-dependent colors.
+- Do not override Fluent components with ad-hoc selectors or `!important`.
+- Ensure light and dark modes work: never assume a single theme; don’t add rules that block theme switching.
+
+## If Fluent doesn’t cover the need
+
+Ask which token or component to align with, then implement via Fluent theming rather than raw color literals.
+
+## Quick examples
+
+- Button or panel look: Fluent `styles` / tokens, not `button { background: #… }`.
+- Page or webview background: `theme.colorNeutralBackground1` (or equivalent token), not a literal in JSON or inline style.
 
 # Windows is Primary
 
