@@ -1,7 +1,7 @@
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::sync::RwLock;
-use tauri::menu::{Menu, MenuBuilder, MenuItemBuilder, Submenu, SubmenuBuilder};
+use tauri::menu::{AboutMetadata, Menu, MenuBuilder, MenuItemBuilder, Submenu, SubmenuBuilder};
 use tauri::Emitter;
 use tauri::Manager;
 use tauri_plugin_store::StoreExt;
@@ -64,6 +64,141 @@ fn build_file_submenu(
     Ok(file_submenu)
 }
 
+/// PNG embedded at build time so the native About panel shows the app icon in dev and bundled builds.
+fn about_icon_png() -> Option<tauri::image::Image<'static>> {
+    const BYTES: &[u8] = include_bytes!(concat!(env!("CARGO_MANIFEST_DIR"), "/icons/128x128.png"));
+    tauri::image::Image::from_bytes(BYTES)
+        .ok()
+        .map(|i| i.to_owned())
+}
+
+fn primary_cargo_author(authors: &str) -> Option<String> {
+    let a = authors.trim();
+    if a.is_empty() {
+        return None;
+    }
+    Some(
+        a.split(':')
+            .next()
+            .unwrap_or(a)
+            .trim()
+            .to_string(),
+    )
+}
+
+fn nonempty_string(opt: &Option<String>) -> Option<String> {
+    opt.as_ref()
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty())
+}
+
+const ABOUT_INTRO: &str =
+    "Desktop app for exploring time-series CSV output produced by RASOrbit.";
+
+fn about_metadata(handle: &tauri::AppHandle) -> AboutMetadata<'static> {
+    let pkg = handle.package_info();
+    let config = handle.config();
+    let bundle = &config.bundle;
+    let name = config
+        .product_name
+        .clone()
+        .unwrap_or_else(|| pkg.name.clone());
+
+    let publisher = nonempty_string(&bundle.publisher)
+        .or_else(|| primary_cargo_author(pkg.authors));
+    let copyright = nonempty_string(&bundle.copyright);
+    let homepage = nonempty_string(&bundle.homepage);
+    let license = nonempty_string(&bundle.license);
+
+    let website_label = homepage.as_ref().map(|url| {
+        if url.contains("github.com") {
+            "GitHub".to_string()
+        } else {
+            "Website".to_string()
+        }
+    });
+
+    #[cfg(target_os = "macos")]
+    let credits = about_macos_credits(&copyright, &publisher, &homepage, &license);
+    #[cfg(not(target_os = "macos"))]
+    let credits: Option<String> = None;
+
+    // Windows/Linux About already lists authors, website, copyright; keep comments as description only.
+    let comments = Some(ABOUT_INTRO.to_string());
+
+    AboutMetadata {
+        name: Some(name),
+        version: Some(pkg.version.to_string()),
+        authors: about_authors_list(&publisher),
+        comments,
+        copyright: copyright.clone(),
+        license,
+        website: homepage.clone(),
+        website_label,
+        credits,
+        icon: about_icon_png(),
+        ..Default::default()
+    }
+}
+
+fn about_authors_list(publisher: &Option<String>) -> Option<Vec<String>> {
+    let p = publisher.as_ref()?.trim();
+    if p.is_empty() {
+        return None;
+    }
+    #[cfg(target_os = "linux")]
+    {
+        if let Some((name, rest)) = p.split_once('<') {
+            let email = rest.trim_end_matches('>').trim();
+            if !name.trim().is_empty() && !email.is_empty() {
+                return Some(vec![format!("{} ({})", name.trim(), email)]);
+            }
+        }
+    }
+    Some(vec![p.to_string()])
+}
+
+/// macOS: standard About ignores `authors` / `website` / `license`; `copyright` often doesn’t apply via
+/// muda’s options dict — put copyright + author + URL + license here so they always show in Credits.
+#[cfg(target_os = "macos")]
+fn about_macos_credits(
+    copyright: &Option<String>,
+    publisher: &Option<String>,
+    homepage: &Option<String>,
+    license: &Option<String>,
+) -> Option<String> {
+    let mut lines: Vec<String> = Vec::new();
+    if let Some(c) = copyright {
+        let t = c.trim();
+        if !t.is_empty() {
+            lines.push(t.to_string());
+        }
+    }
+    if let Some(p) = publisher {
+        let t = p.trim();
+        if !t.is_empty() {
+            lines.push(t.to_string());
+        }
+    }
+    if let Some(h) = homepage {
+        let t = h.trim();
+        if !t.is_empty() {
+            lines.push(t.to_string());
+        }
+    }
+    if let Some(l) = license {
+        let t = l.trim();
+        if !t.is_empty() {
+            lines.push(format!("License: {}", t));
+        }
+    }
+    if lines.is_empty() {
+        None
+    } else {
+        Some(lines.join("\n"))
+    }
+}
+
 fn build_app_menu(handle: &tauri::AppHandle, state: &AppState) -> tauri::Result<Menu<tauri::Wry>> {
     let file_submenu = build_file_submenu(handle, state)?;
 
@@ -98,9 +233,18 @@ fn build_app_menu(handle: &tauri::AppHandle, state: &AppState) -> tauri::Result<
         .item(&lat_long_line_item)
         .build()?;
 
+    let app_name = handle
+        .config()
+        .product_name
+        .clone()
+        .unwrap_or_else(|| handle.package_info().name.clone());
+    let about_item_text = format!("About {}", app_name);
+
     if cfg!(target_os = "macos") {
-        let app_submenu = SubmenuBuilder::with_id(handle, "app", "RASOrbit Viewer")
-            .quit_with_text("Quit RASOrbit Viewer")
+        let app_submenu = SubmenuBuilder::with_id(handle, "app", &app_name)
+            .about_with_text(&about_item_text, Some(about_metadata(handle)))
+            .separator()
+            .quit_with_text(format!("Quit {}", app_name))
             .build()?;
         MenuBuilder::new(handle)
             .item(&app_submenu)
@@ -108,9 +252,13 @@ fn build_app_menu(handle: &tauri::AppHandle, state: &AppState) -> tauri::Result<
             .item(&view_submenu)
             .build()
     } else {
+        let help_submenu = SubmenuBuilder::with_id(handle, "help", "&Help")
+            .about_with_text(&about_item_text, Some(about_metadata(handle)))
+            .build()?;
         MenuBuilder::new(handle)
             .item(&file_submenu)
             .item(&view_submenu)
+            .item(&help_submenu)
             .build()
     }
 }

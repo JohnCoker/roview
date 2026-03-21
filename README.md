@@ -27,6 +27,8 @@ and minimal chrome.
 
 ## Development
 
+**App version** is defined only in `src-tauri/Cargo.toml` (`[package] version`). Tauri reads that for bundles and the About dialog. The `version` in `package.json` is a fixed npm placeholder (`0.0.0`) and is not the product version.
+
 ### Prerequisites
 
 - Node.js and npm
