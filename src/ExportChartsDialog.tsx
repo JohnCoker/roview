@@ -223,7 +223,7 @@ export function ExportChartsDialog({
                 id="export-prefix"
                 value={prefix}
                 onChange={(_e, data) => setPrefix(data.value)}
-                placeholder="e.g. run_2025-03-07"
+                placeholder="LV 1 Polar 400 nm Circular Orbit"
                 disabled={!canExport}
               />
               <span style={{ fontSize: "0.85rem" }}>

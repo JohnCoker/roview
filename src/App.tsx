@@ -91,7 +91,7 @@ function App({ theme }: AppProps) {
   useEffect(() => {
     if (!runFile) return;
     const dataCols = runFile.dataColumns();
-    setSelectedColumns(dataCols.slice(0, 3).map((c) => c.name));
+    setSelectedColumns(dataCols.slice(0, 4).map((c) => c.name));
   }, [runFile?.path]);
 
   useEffect(() => {

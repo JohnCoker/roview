@@ -77,8 +77,8 @@ export function LoadedFileView({
     let unlisteners: (() => void)[] = [];
     (async () => {
       const fns = await Promise.all([
-        listen("view-first-3-columns", () => {
-          const next = dataColumns.slice(0, 3).map((c) => c.name);
+        listen("view-first-4-columns", () => {
+          const next = dataColumns.slice(0, 4).map((c) => c.name);
           onSelectionChange(next);
         }),
         listen("view-all-columns", () => {
@@ -97,16 +97,6 @@ export function LoadedFileView({
           }
           setScrollTargetKey(MAP_TRACE_SELECTION);
           onSelectionChange([...selectedColumns, MAP_TRACE_SELECTION]);
-        }),
-        listen("view-lat-long-line", () => {
-          if (locationColumns == null) return;
-          if (selectedColumns.includes(LAT_LONG_LINE_SELECTION)) {
-            setScrollTargetKey(null);
-            onSelectionChange(selectedColumns.filter((name) => name !== LAT_LONG_LINE_SELECTION));
-            return;
-          }
-          setScrollTargetKey(LAT_LONG_LINE_SELECTION);
-          onSelectionChange([...selectedColumns, LAT_LONG_LINE_SELECTION]);
         }),
       ]);
       if (cancelled) {
@@ -132,13 +122,15 @@ export function LoadedFileView({
           scrollTargetKey={scrollTargetKey}
         />
       </div>
-      <ColumnSelectDialog
-        open={columnDialogOpen}
-        onClose={() => setColumnDialogOpen(false)}
-        dataColumns={dataColumns}
-        selectedColumns={selectedColumns}
-        onApply={onSelectionChange}
-      />
+      {columnDialogOpen && (
+        <ColumnSelectDialog
+          open
+          onClose={() => setColumnDialogOpen(false)}
+          runFile={runFile}
+          selectedColumns={selectedColumns}
+          onApply={onSelectionChange}
+        />
+      )}
       <ExportChartsDialog
         open={showExportDialog}
         onClose={() => setShowExportDialog(false)}

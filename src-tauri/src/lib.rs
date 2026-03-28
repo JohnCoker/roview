@@ -212,25 +212,21 @@ fn build_app_menu(handle: &tauri::AppHandle, state: &AppState) -> tauri::Result<
         .read()
         .map(|g| *g)
         .unwrap_or(false);
-    let first_three_item =
-        MenuItemBuilder::with_id("view-first-3-columns", "First 3 Columns").enabled(view_enabled).build(handle)?;
+    let first_four_item =
+        MenuItemBuilder::with_id("view-first-4-columns", "First 4 Columns").enabled(view_enabled).build(handle)?;
     let all_columns_item =
         MenuItemBuilder::with_id("view-all-columns", "All Columns").enabled(view_enabled).build(handle)?;
     let select_columns_item =
         MenuItemBuilder::with_id("view-select-columns", "Select Columns…").enabled(view_enabled).build(handle)?;
     let map_trace_item =
         MenuItemBuilder::with_id("view-map-trace", "Map Trace").enabled(location_enabled).build(handle)?;
-    let lat_long_line_item = MenuItemBuilder::with_id("view-lat-long-line", "Latitude vs Longitude")
-        .enabled(location_enabled)
-        .build(handle)?;
 
     let view_submenu = SubmenuBuilder::with_id(handle, "view", "View")
-        .item(&first_three_item)
+        .item(&first_four_item)
         .item(&all_columns_item)
         .item(&select_columns_item)
         .separator()
         .item(&map_trace_item)
-        .item(&lat_long_line_item)
         .build()?;
 
     let app_name = handle
@@ -486,9 +482,9 @@ pub fn run() {
                     }
                     return;
                 }
-                if id == "view-first-3-columns" {
+                if id == "view-first-4-columns" {
                     if let Some(w) = app_handle.get_webview_window("main") {
-                        let _ = w.emit("view-first-3-columns", ());
+                        let _ = w.emit("view-first-4-columns", ());
                     }
                     return;
                 }
@@ -507,12 +503,6 @@ pub fn run() {
                 if id == "view-map-trace" {
                     if let Some(w) = app_handle.get_webview_window("main") {
                         let _ = w.emit("view-map-trace", ());
-                    }
-                    return;
-                }
-                if id == "view-lat-long-line" {
-                    if let Some(w) = app_handle.get_webview_window("main") {
-                        let _ = w.emit("view-lat-long-line", ());
                     }
                     return;
                 }

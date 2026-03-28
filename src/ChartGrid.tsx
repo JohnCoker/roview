@@ -4,6 +4,8 @@ import * as echarts from "echarts";
 import type { ECharts } from "echarts";
 import { save as saveDialog, message as showMessage } from "@tauri-apps/plugin-dialog";
 import { writeFile } from "@tauri-apps/plugin-fs";
+import { Text, tokens, Toolbar, ToolbarButton, ToolbarGroup } from "@fluentui/react-components";
+import { Add16Regular, Subtract16Regular } from "@fluentui/react-icons";
 import type { Theme } from "@fluentui/react-theme";
 import type { Col, RunFile } from "./RunFile";
 import worldGeoJson from "./world.json";
@@ -51,6 +53,26 @@ function normalizeLongitudeDegrees(longitude: number): number {
   return normalized;
 }
 
+const MAP_ZOOM_MIN = 1;
+const MAP_ZOOM_MAX = 20;
+
+function readGeoZoom(chart: ECharts): number {
+  const opt = chart.getOption() as { geo?: Record<string, unknown> | Record<string, unknown>[] };
+  const geo = opt.geo;
+  const g = Array.isArray(geo) ? geo[0] : geo;
+  const curRaw = g && typeof g === "object" && "zoom" in g ? Number((g as { zoom?: number }).zoom) : 1;
+  const cur = Number.isFinite(curRaw) ? curRaw : 1;
+  return Math.min(MAP_ZOOM_MAX, Math.max(MAP_ZOOM_MIN, cur));
+}
+
+/** Programmatic geo zoom; keeps pan (`roam: move`) while avoiding scroll-wheel zoom on the map. */
+function adjustMapGeoZoom(chart: ECharts, factor: number): number {
+  const cur = readGeoZoom(chart);
+  const next = Math.min(MAP_ZOOM_MAX, Math.max(MAP_ZOOM_MIN, cur * factor));
+  chart.setOption({ geo: { zoom: next } });
+  return next;
+}
+
 if (echarts.getMap(WORLD_MAP_NAME) == null) {
   echarts.registerMap(WORLD_MAP_NAME, worldGeoJson as never);
 }
@@ -61,12 +83,40 @@ export const ChartGrid = forwardRef<ChartGridRef, ChartGridProps>(
   const reactEChartsRefs = useRef<ReactEChartsRef[]>([]);
   const chartItemRefs = useRef<Record<string, HTMLDivElement | null>>({});
   const prevSelectionRef = useRef<string[]>([]);
+  const mapChartByKeyRef = useRef<Map<string, ECharts>>(new Map());
   const chartFontFamily = theme.fontFamilyBase;
   const chartText = theme.colorNeutralForeground1;
   const chartSubtleText = theme.colorNeutralForeground2;
   const chartAxis = theme.colorNeutralStrokeAccessible ?? theme.colorNeutralStroke1;
   const chartGridLine = theme.colorNeutralStroke2;
   const chartAccent = theme.colorBrandForeground1 ?? theme.colorBrandStroke1 ?? chartText;
+  /** Axis line + tick stroke ~1.25px in chart space. */
+  const chartAxisStrokePx = 1.25;
+  /** Cartesian charts: balanced grid + ~one-letter tick–axis gap; H/V name gaps aligned. */
+  /** Extra room for labels when margin increases (containLabel: false keeps multi-chart alignment). */
+  const cartesianGrid = { left: 76, right: 12, top: 10, bottom: 40, containLabel: false } as const;
+  const cartesianAxisNameGap = 26;
+  /** ~1 letter / “space” between tick marks and scale numbers (reviewer). */
+  const cartesianAxisLabelMargin = 11;
+  const cartesianAxisLine = { lineStyle: { color: chartAxis, width: chartAxisStrokePx } };
+  const cartesianAxisTick = { lineStyle: { color: chartAxis, width: chartAxisStrokePx } };
+  const cartesianSplitLine = { show: true, lineStyle: { color: chartGridLine } };
+  const cartesianTextStyle = {
+    fontFamily: chartFontFamily,
+    fontWeight: theme.fontWeightSemibold,
+    color: chartText,
+  };
+  const cartesianAxisLabelBase = {
+    margin: cartesianAxisLabelMargin,
+    fontFamily: chartFontFamily,
+    fontWeight: theme.fontWeightSemibold,
+    color: chartSubtleText,
+  };
+  const cartesianNameTextStyle = {
+    fontFamily: chartFontFamily,
+    fontWeight: theme.fontWeightSemibold,
+    color: chartSubtleText,
+  };
   const menuBg = theme.colorNeutralBackground1;
   const menuBorder = theme.colorNeutralStroke1;
   const borderRadius = theme.borderRadiusMedium;
@@ -113,6 +163,9 @@ export const ChartGrid = forwardRef<ChartGridRef, ChartGridProps>(
     y: number;
     chartIndex: number;
   } | null>(null);
+
+  /** Geo zoom per map chart (for +/- disabled at limits). */
+  const [mapGeoZoom, setMapGeoZoom] = useState<Record<string, number>>({});
 
   useEffect(() => {
     if (!contextMenu) return;
@@ -202,7 +255,11 @@ export const ChartGrid = forwardRef<ChartGridRef, ChartGridProps>(
     }
   };
 
-  const handleChartReady = (chart: ECharts, kind: "line" | "map" | "latLong") => {
+  const handleChartReady = (chart: ECharts, kind: "line" | "map" | "latLong", selectionKey: string) => {
+    if (kind === "map") {
+      mapChartByKeyRef.current.set(selectionKey, chart);
+      setMapGeoZoom((prev) => ({ ...prev, [selectionKey]: readGeoZoom(chart) }));
+    }
     if (kind !== "line") return;
     chartRefs.current.push(chart);
     if (lineChartCount > 1 && chartRefs.current.length === lineChartCount) {
@@ -256,6 +313,7 @@ export const ChartGrid = forwardRef<ChartGridRef, ChartGridProps>(
       )}
       {chartSelections.map((selection, index) => {
         const isMapChart = selection.kind === "map";
+        const mapZoom = isMapChart ? (mapGeoZoom[selection.key] ?? 1) : 1;
         const option = (() => {
           if (selection.kind === "map") {
             const locationColumns = runFile.locationColumns();
@@ -278,14 +336,22 @@ export const ChartGrid = forwardRef<ChartGridRef, ChartGridProps>(
             const mapHighlight = theme.colorNeutralBackground4 ?? mapFill;
 
             return {
-              textStyle: { fontFamily: chartFontFamily, color: chartText },
+              textStyle: {
+                fontFamily: chartFontFamily,
+                fontWeight: theme.fontWeightSemibold,
+                color: chartText,
+              },
               tooltip: {
                 trigger: "item" as const,
                 backgroundColor: tooltipBg,
                 borderColor: tooltipBorder,
                 borderWidth: 1,
                 padding: 8,
-                textStyle: { fontFamily: chartFontFamily, color: chartText },
+                textStyle: {
+                  fontFamily: chartFontFamily,
+                  fontWeight: theme.fontWeightSemibold,
+                  color: chartText,
+                },
                 formatter: (params: any) => {
                   const value = Array.isArray(params?.value) ? params.value : [];
                   const rawLong = (params?.data?.rawLong ?? value[0]) as number | null | undefined;
@@ -311,7 +377,8 @@ export const ChartGrid = forwardRef<ChartGridRef, ChartGridProps>(
                 top: 8,
                 bottom: 8,
                 roam: "move",
-                scaleLimit: { min: 1, max: 20 },
+                zoom: mapZoom,
+                scaleLimit: { min: MAP_ZOOM_MIN, max: MAP_ZOOM_MAX },
                 itemStyle: { areaColor: mapFill, borderColor: chartAxis },
                 emphasis: { itemStyle: { areaColor: mapHighlight } },
               },
@@ -356,8 +423,8 @@ export const ChartGrid = forwardRef<ChartGridRef, ChartGridProps>(
             const longUnit = locationColumns.long.unit();
 
             return {
-              textStyle: { fontFamily: chartFontFamily, color: chartText },
-              grid: { left: 68, right: 10, top: 8, bottom: 30, containLabel: false },
+              textStyle: cartesianTextStyle,
+              grid: { ...cartesianGrid },
               tooltip: {
                 trigger: "axis" as const,
                 axisPointer: { type: "line" as const },
@@ -365,7 +432,7 @@ export const ChartGrid = forwardRef<ChartGridRef, ChartGridProps>(
                 borderColor: tooltipBorder,
                 borderWidth: 1,
                 padding: 8,
-                textStyle: { fontFamily: chartFontFamily, color: chartText },
+                textStyle: cartesianTextStyle,
                 formatter: (params: any) => {
                   const p = Array.isArray(params) ? params[0] : params;
                   const value = Array.isArray(p?.value) ? p.value : [p?.value, null];
@@ -383,22 +450,32 @@ export const ChartGrid = forwardRef<ChartGridRef, ChartGridProps>(
                 type: "value" as const,
                 name: locationColumns.long.name,
                 nameLocation: "middle",
-                nameGap: 22,
-                splitLine: { show: false },
-                axisLine: { lineStyle: { color: chartAxis } },
-                axisLabel: { margin: 4, formatter: formatAxisTick, hideOverlap: true, color: chartSubtleText },
-                nameTextStyle: { color: chartSubtleText, fontFamily: chartFontFamily },
+                nameGap: cartesianAxisNameGap,
+                splitLine: cartesianSplitLine,
+                axisLine: cartesianAxisLine,
+                axisTick: cartesianAxisTick,
+                axisLabel: {
+                  ...cartesianAxisLabelBase,
+                  formatter: formatAxisTick,
+                  hideOverlap: true,
+                },
+                nameTextStyle: cartesianNameTextStyle,
               },
               yAxis: {
                 type: "value" as const,
                 name: locationColumns.lat.name,
                 nameLocation: "middle",
-                nameGap: 34,
+                nameGap: cartesianAxisNameGap,
                 nameRotate: 90,
-                axisLine: { lineStyle: { color: chartAxis } },
-                axisLabel: { margin: 4, formatter: formatAxisTick, hideOverlap: true, color: chartSubtleText },
-                nameTextStyle: { color: chartSubtleText, fontFamily: chartFontFamily },
-                splitLine: { show: true, lineStyle: { color: chartGridLine } },
+                axisLine: cartesianAxisLine,
+                axisTick: cartesianAxisTick,
+                axisLabel: {
+                  ...cartesianAxisLabelBase,
+                  formatter: formatAxisTick,
+                  hideOverlap: true,
+                },
+                nameTextStyle: cartesianNameTextStyle,
+                splitLine: cartesianSplitLine,
               },
               dataZoom: [
                 {
@@ -437,8 +514,8 @@ export const ChartGrid = forwardRef<ChartGridRef, ChartGridProps>(
           const colUnit = col.unit();
 
           return {
-            textStyle: { fontFamily: chartFontFamily, color: chartText },
-            grid: { left: 68, right: 10, top: 8, bottom: 30, containLabel: false },
+            textStyle: cartesianTextStyle,
+            grid: { ...cartesianGrid },
             tooltip: {
               trigger: "axis" as const,
               axisPointer: { type: "line" as const },
@@ -446,7 +523,7 @@ export const ChartGrid = forwardRef<ChartGridRef, ChartGridProps>(
               borderColor: tooltipBorder,
               borderWidth: 1,
               padding: 8,
-              textStyle: { fontFamily: chartFontFamily, color: chartText },
+              textStyle: cartesianTextStyle,
               formatter: (params: any) => {
                 const p = Array.isArray(params) ? params[0] : params;
                 const value = Array.isArray(p?.value) ? p.value : [p?.value, null];
@@ -465,22 +542,32 @@ export const ChartGrid = forwardRef<ChartGridRef, ChartGridProps>(
               type: "value" as const,
               name: timeCol.name,
               nameLocation: "middle",
-              nameGap: 22,
-              splitLine: { show: false },
-              axisLine: { lineStyle: { color: chartAxis } },
-              axisLabel: { color: chartSubtleText },
-              nameTextStyle: { color: chartSubtleText, fontFamily: chartFontFamily },
+              nameGap: cartesianAxisNameGap,
+              splitLine: cartesianSplitLine,
+              axisLine: cartesianAxisLine,
+              axisTick: cartesianAxisTick,
+              axisLabel: {
+                ...cartesianAxisLabelBase,
+                formatter: formatAxisTick,
+                hideOverlap: true,
+              },
+              nameTextStyle: cartesianNameTextStyle,
             },
             yAxis: {
               type: "value" as const,
               name: col.name,
               nameLocation: "middle",
-              nameGap: 34,
+              nameGap: cartesianAxisNameGap,
               nameRotate: 90,
-              axisLine: { lineStyle: { color: chartAxis } },
-              axisLabel: { margin: 4, formatter: formatAxisTick, hideOverlap: true, color: chartSubtleText },
-              nameTextStyle: { color: chartSubtleText, fontFamily: chartFontFamily },
-              splitLine: { show: true, lineStyle: { color: chartGridLine } },
+              axisLine: cartesianAxisLine,
+              axisTick: cartesianAxisTick,
+              axisLabel: {
+                ...cartesianAxisLabelBase,
+                formatter: formatAxisTick,
+                hideOverlap: true,
+              },
+              nameTextStyle: cartesianNameTextStyle,
+              splitLine: cartesianSplitLine,
             },
             dataZoom: [
               {
@@ -509,6 +596,9 @@ export const ChartGrid = forwardRef<ChartGridRef, ChartGridProps>(
 
         if (option == null) return null;
 
+        const mapZoomInDisabled = isMapChart && mapZoom >= MAP_ZOOM_MAX - 1e-9;
+        const mapZoomOutDisabled = isMapChart && mapZoom <= MAP_ZOOM_MIN + 1e-9;
+
         return (
           <div
             key={selection.key}
@@ -520,7 +610,72 @@ export const ChartGrid = forwardRef<ChartGridRef, ChartGridProps>(
               e.preventDefault();
               setContextMenu({ x: e.clientX, y: e.clientY, chartIndex: index });
             }}
+            style={isMapChart ? { position: "relative" } : undefined}
           >
+            {isMapChart && (
+              <div
+                style={{
+                  position: "absolute",
+                  top: tokens.spacingVerticalM,
+                  right: tokens.spacingHorizontalM,
+                  zIndex: 1,
+                  display: "flex",
+                  alignItems: "center",
+                  gap: tokens.spacingHorizontalS,
+                  padding: `${tokens.spacingVerticalXS} ${tokens.spacingHorizontalS}`,
+                  borderRadius: borderRadius,
+                  border: `1px solid ${tokens.colorNeutralStrokeAlpha}`,
+                  backgroundColor: `color-mix(in srgb, ${tokens.colorNeutralBackground2} 68%, transparent)`,
+                  boxShadow: theme.shadow8,
+                }}
+              >
+                <Text
+                  size={200}
+                  style={{
+                    color: chartSubtleText,
+                    whiteSpace: "nowrap",
+                    userSelect: "none",
+                  }}
+                >
+                  Zoom
+                </Text>
+                <Toolbar
+                  size="small"
+                  aria-label="Map zoom"
+                  style={{
+                    backgroundColor: "transparent",
+                    boxShadow: "none",
+                    padding: 0,
+                    minHeight: "auto",
+                  }}
+                >
+                  <ToolbarGroup>
+                    <ToolbarButton
+                      aria-label="Zoom in on map"
+                      icon={<Add16Regular />}
+                      disabled={mapZoomInDisabled}
+                      onClick={() => {
+                        const c = mapChartByKeyRef.current.get(selection.key);
+                        if (!c) return;
+                        const next = adjustMapGeoZoom(c, 1.25);
+                        setMapGeoZoom((prev) => ({ ...prev, [selection.key]: next }));
+                      }}
+                    />
+                    <ToolbarButton
+                      aria-label="Zoom out on map"
+                      icon={<Subtract16Regular />}
+                      disabled={mapZoomOutDisabled}
+                      onClick={() => {
+                        const c = mapChartByKeyRef.current.get(selection.key);
+                        if (!c) return;
+                        const next = adjustMapGeoZoom(c, 1 / 1.25);
+                        setMapGeoZoom((prev) => ({ ...prev, [selection.key]: next }));
+                      }}
+                    />
+                  </ToolbarGroup>
+                </Toolbar>
+              </div>
+            )}
             <ReactEChartsCore
               echarts={echarts}
               ref={setReactEChartsRef}
@@ -530,7 +685,7 @@ export const ChartGrid = forwardRef<ChartGridRef, ChartGridProps>(
                 height: isMapChart ? "clamp(300px, 56vw, 740px)" : "clamp(200px, 44vw, 520px)",
                 minHeight: isMapChart ? MAP_CHART_MIN_HEIGHT : LINE_CHART_MIN_HEIGHT,
               }}
-              onChartReady={(chart) => handleChartReady(chart, selection.kind)}
+              onChartReady={(chart) => handleChartReady(chart, selection.kind, selection.key)}
             />
           </div>
         );
