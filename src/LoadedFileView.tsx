@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import type { RunFile } from "./RunFile";
@@ -28,8 +28,12 @@ export function LoadedFileView({
   selectedColumns,
   onSelectionChange,
 }: LoadedFileViewProps) {
-  const dataColumns = runFile.dataColumns();
-  const locationColumns = runFile.locationColumns();
+  /** Stable refs so the menu-listener effect does not re-run every render (was breaking Map Trace on macOS). */
+  const dataColumns = useMemo(() => runFile.dataColumns(), [runFile]);
+  const locationColumns = useMemo(() => runFile.locationColumns(), [runFile]);
+  /** Latest selection for menu handlers; keeping this off the listener effect deps avoids tearing down `listen()` on every column change. */
+  const selectedColumnsRef = useRef(selectedColumns);
+  selectedColumnsRef.current = selectedColumns;
   const [showExportDialog, setShowExportDialog] = useState(false);
   const chartGridRef = useRef<ChartGridRef>(null);
   const [columnDialogOpen, setColumnDialogOpen] = useState(false);
@@ -90,13 +94,14 @@ export function LoadedFileView({
         }),
         listen("view-map-trace", () => {
           if (locationColumns == null) return;
-          if (selectedColumns.includes(MAP_TRACE_SELECTION)) {
+          const sel = selectedColumnsRef.current;
+          if (sel.includes(MAP_TRACE_SELECTION)) {
             setScrollTargetKey(null);
-            onSelectionChange(selectedColumns.filter((name) => name !== MAP_TRACE_SELECTION));
+            onSelectionChange(sel.filter((name) => name !== MAP_TRACE_SELECTION));
             return;
           }
           setScrollTargetKey(MAP_TRACE_SELECTION);
-          onSelectionChange([...selectedColumns, MAP_TRACE_SELECTION]);
+          onSelectionChange([...sel, MAP_TRACE_SELECTION]);
         }),
       ]);
       if (cancelled) {
@@ -109,7 +114,7 @@ export function LoadedFileView({
       cancelled = true;
       unlisteners.forEach((u) => u());
     };
-  }, [dataColumns, locationColumns, onSelectionChange, selectedColumns]);
+  }, [dataColumns, locationColumns, onSelectionChange]);
 
   return (
     <>

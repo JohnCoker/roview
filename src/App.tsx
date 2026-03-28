@@ -7,6 +7,8 @@ import { Button, Spinner, Text, tokens } from "@fluentui/react-components";
 import type { Theme } from "@fluentui/react-theme";
 import { RunFile, Problem } from "./RunFile";
 import { LoadedFileView } from "./LoadedFileView";
+import { UiErrorBoundary } from "./UiErrorBoundary";
+import { isWindowsPlatform, WindowsAppMenuBar } from "./WindowsAppMenuBar";
 import "./App.css";
 
 export interface AppProps {
@@ -158,6 +160,40 @@ function App({ theme }: AppProps) {
 
   const isEmpty = !currentFilePath;
   const openingFile = isReadingFile;
+  const showWindowsMenu = isWindowsPlatform();
+  const viewCommandsEnabled = !!runFile && !loadError && !openingFile;
+  const exportEnabled = viewCommandsEnabled && selectedColumns.length > 0;
+  const locationEnabled = viewCommandsEnabled && runFile?.locationColumns() != null;
+
+  const windowsMenuProps = showWindowsMenu ? (
+    <WindowsAppMenuBar
+      theme={theme}
+      viewCommandsEnabled={viewCommandsEnabled}
+      exportEnabled={exportEnabled}
+      locationEnabled={!!locationEnabled}
+      recentListKey={currentFilePath}
+    />
+  ) : null;
+
+  const shellStyle = {
+    display: "flex" as const,
+    flexDirection: "column" as const,
+    height: "100vh",
+    overflow: "hidden" as const,
+    backgroundColor: theme.colorNeutralBackground1,
+    color: theme.colorNeutralForeground1,
+  };
+
+  const mainFlexStyle = {
+    flex: 1,
+    minHeight: 0,
+    height: "auto" as const,
+    overflow: "hidden" as const,
+    display: "flex" as const,
+    flexDirection: "column" as const,
+    backgroundColor: theme.colorNeutralBackground1,
+    color: theme.colorNeutralForeground1,
+  };
 
   const loadingStyle = {
     display: "flex" as const,
@@ -170,20 +206,102 @@ function App({ theme }: AppProps) {
   };
 
   if (isEmpty) {
+    if (!showWindowsMenu) {
+      return (
+        <main
+          className="container container--empty"
+          style={{
+            backgroundColor: theme.colorNeutralBackground1,
+            color: theme.colorNeutralForeground1,
+          }}
+        >
+          <p>Use File → Open… or open a CSV via the system.</p>
+        </main>
+      );
+    }
     return (
-      <main
-        className="container container--empty"
-        style={{
-          backgroundColor: theme.colorNeutralBackground1,
-          color: theme.colorNeutralForeground1,
-        }}
-      >
-        <p>Use File → Open… or open a CSV via the system.</p>
-      </main>
+      <div style={shellStyle}>
+        {windowsMenuProps}
+        <main
+          className="container container--empty"
+          style={{
+            ...mainFlexStyle,
+            justifyContent: "center",
+            textAlign: "center",
+          }}
+        >
+          <p>Use File → Open… or open a CSV via the system.</p>
+        </main>
+      </div>
     );
   }
 
   if (loadError) {
+    if (!showWindowsMenu) {
+      return (
+        <main
+          className="container"
+          style={{
+            backgroundColor: theme.colorNeutralBackground1,
+            color: theme.colorNeutralForeground1,
+          }}
+        >
+          <p className="load-error">{loadError}</p>
+        </main>
+      );
+    }
+    return (
+      <div style={shellStyle}>
+        {windowsMenuProps}
+        <main className="container" style={mainFlexStyle}>
+          <p className="load-error">{loadError}</p>
+        </main>
+      </div>
+    );
+  }
+
+  if (openingFile) {
+    if (!showWindowsMenu) {
+      return (
+        <main
+          className="container container--empty"
+          style={{
+            backgroundColor: theme.colorNeutralBackground1,
+            color: theme.colorNeutralForeground1,
+          }}
+          aria-busy="true"
+          aria-live="polite"
+        >
+          <div style={loadingStyle}>
+            <Spinner size="large" label="Opening file…" />
+            <Text size={300}>Parsing CSV…</Text>
+          </div>
+        </main>
+      );
+    }
+    return (
+      <div style={shellStyle}>
+        {windowsMenuProps}
+        <main
+          className="container container--empty"
+          style={mainFlexStyle}
+          aria-busy="true"
+          aria-live="polite"
+        >
+          <div style={loadingStyle}>
+            <Spinner size="large" label="Opening file…" />
+            <Text size={300}>Parsing CSV…</Text>
+          </div>
+        </main>
+      </div>
+    );
+  }
+
+  if (!runFile) {
+    return showWindowsMenu ? <div style={shellStyle}>{windowsMenuProps}</div> : null;
+  }
+
+  if (!showWindowsMenu) {
     return (
       <main
         className="container"
@@ -192,42 +310,48 @@ function App({ theme }: AppProps) {
           color: theme.colorNeutralForeground1,
         }}
       >
-        <p className="load-error">{loadError}</p>
+        {problems && problems.length > 0 && showWarnings && (
+          <div
+            className="warning-banner"
+            style={{
+              padding: "12px 16px",
+              borderRadius: tokens.borderRadiusLarge,
+              border: `1px solid ${tokens.colorPaletteYellowBorder1}`,
+              backgroundColor: tokens.colorPaletteYellowBackground2,
+              color: tokens.colorNeutralForeground1,
+            }}
+          >
+            <div style={{ display: "flex", alignItems: "start", justifyContent: "space-between", gap: 12 }}>
+              <div>
+                <div style={{ fontWeight: 600, marginBottom: 4 }}>Warnings for this file</div>
+                <ul className="warning-banner-list">
+                  {problems.map((p, idx) => (
+                    <li key={idx}>{p.message}</li>
+                  ))}
+                </ul>
+              </div>
+              <Button appearance="subtle" onClick={() => setShowWarnings(false)} aria-label="Dismiss warnings">
+                ×
+              </Button>
+            </div>
+          </div>
+        )}
+        <UiErrorBoundary key={runFile.path} theme={theme}>
+          <LoadedFileView
+            runFile={runFile}
+            theme={theme}
+            selectedColumns={selectedColumns}
+            onSelectionChange={setSelectedColumns}
+          />
+        </UiErrorBoundary>
       </main>
     );
-  }
-
-  if (openingFile) {
-    return (
-      <main
-        className="container container--empty"
-        style={{
-          backgroundColor: theme.colorNeutralBackground1,
-          color: theme.colorNeutralForeground1,
-        }}
-        aria-busy="true"
-        aria-live="polite"
-      >
-        <div style={loadingStyle}>
-          <Spinner size="large" label="Opening file…" />
-          <Text size={300}>Parsing CSV…</Text>
-        </div>
-      </main>
-    );
-  }
-
-  if (!runFile) {
-    return null;
   }
 
   return (
-    <main
-      className="container"
-      style={{
-        backgroundColor: theme.colorNeutralBackground1,
-        color: theme.colorNeutralForeground1,
-      }}
-    >
+    <div style={shellStyle}>
+      {windowsMenuProps}
+      <main className="container" style={mainFlexStyle}>
       {problems && problems.length > 0 && showWarnings && (
         <div
           className="warning-banner"
@@ -254,13 +378,16 @@ function App({ theme }: AppProps) {
           </div>
         </div>
       )}
-      <LoadedFileView
-        runFile={runFile}
-        theme={theme}
-        selectedColumns={selectedColumns}
-        onSelectionChange={setSelectedColumns}
-      />
-    </main>
+        <UiErrorBoundary key={runFile.path} theme={theme}>
+          <LoadedFileView
+            runFile={runFile}
+            theme={theme}
+            selectedColumns={selectedColumns}
+            onSelectionChange={setSelectedColumns}
+          />
+        </UiErrorBoundary>
+      </main>
+    </div>
   );
 }
 

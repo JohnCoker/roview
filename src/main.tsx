@@ -1,14 +1,30 @@
 import React from "react";
 import ReactDOM from "react-dom/client";
 import { FluentProvider, webDarkTheme, webLightTheme } from "@fluentui/react-components";
+import { setTheme } from "@tauri-apps/api/app";
 import { getCurrentWebviewWindow } from "@tauri-apps/api/webviewWindow";
 import App from "./App";
 
-/** Native webview chrome before React runs; matches Fluent light/dark via system preference. */
+function isWindowsPlatform(): boolean {
+  return typeof navigator !== "undefined" && /Windows/i.test(navigator.userAgent);
+}
+
+/**
+ * Before React: align webview with the shell. On Windows 11+ we use `mica` in `tauri.windows.conf.json`
+ * (requires a transparent webview); keep the webview surface transparent so DWM can composite Mica,
+ * and let Fluent `App` fill the viewport with `theme.colorNeutralBackground1`.
+ * On other platforms, paint the webview with the same neutral background as the app.
+ */
 function syncWebviewBackgroundToSystemTheme(): void {
   const prefersDark = window.matchMedia?.("(prefers-color-scheme: dark)")?.matches ?? false;
-  const bg = (prefersDark ? webDarkTheme : webLightTheme).colorNeutralBackground1;
-  void getCurrentWebviewWindow().setBackgroundColor(bg).catch(() => {});
+  const w = getCurrentWebviewWindow();
+  if (isWindowsPlatform()) {
+    void w.setBackgroundColor({ red: 0, green: 0, blue: 0, alpha: 0 }).catch(() => {});
+  } else {
+    const bg = (prefersDark ? webDarkTheme : webLightTheme).colorNeutralBackground1;
+    void w.setBackgroundColor(bg).catch(() => {});
+  }
+  void setTheme(prefersDark ? "dark" : "light").catch(() => {});
 }
 
 syncWebviewBackgroundToSystemTheme();
@@ -29,8 +45,14 @@ function Root() {
   const theme = prefersDark ? webDarkTheme : webLightTheme;
 
   React.useEffect(() => {
-    getCurrentWebviewWindow().setBackgroundColor(theme.colorNeutralBackground1).catch(() => {});
-  }, [theme]);
+    const w = getCurrentWebviewWindow();
+    if (isWindowsPlatform()) {
+      void w.setBackgroundColor({ red: 0, green: 0, blue: 0, alpha: 0 }).catch(() => {});
+    } else {
+      void w.setBackgroundColor(theme.colorNeutralBackground1).catch(() => {});
+    }
+    void setTheme(prefersDark ? "dark" : "light").catch(() => {});
+  }, [theme, prefersDark]);
 
   return (
     <FluentProvider theme={theme}>

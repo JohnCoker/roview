@@ -1,6 +1,7 @@
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::sync::RwLock;
+#[cfg(not(windows))]
 use tauri::menu::{AboutMetadata, Menu, MenuBuilder, MenuItemBuilder, Submenu, SubmenuBuilder};
 use tauri::Emitter;
 use tauri::Manager;
@@ -18,6 +19,7 @@ pub struct AppState {
     pub location_enabled: RwLock<bool>,
 }
 
+#[cfg(not(windows))]
 fn build_file_submenu(
     handle: &tauri::AppHandle,
     state: &AppState,
@@ -65,6 +67,7 @@ fn build_file_submenu(
 }
 
 /// PNG embedded at build time so the native About panel shows the app icon in dev and bundled builds.
+#[cfg(not(windows))]
 fn about_icon_png() -> Option<tauri::image::Image<'static>> {
     const BYTES: &[u8] = include_bytes!(concat!(env!("CARGO_MANIFEST_DIR"), "/icons/128x128.png"));
     tauri::image::Image::from_bytes(BYTES)
@@ -72,6 +75,7 @@ fn about_icon_png() -> Option<tauri::image::Image<'static>> {
         .map(|i| i.to_owned())
 }
 
+#[cfg(not(windows))]
 fn primary_cargo_author(authors: &str) -> Option<String> {
     let a = authors.trim();
     if a.is_empty() {
@@ -86,15 +90,18 @@ fn primary_cargo_author(authors: &str) -> Option<String> {
     )
 }
 
+#[cfg(not(windows))]
 fn nonempty_string(opt: &Option<String>) -> Option<String> {
     opt.as_ref()
         .map(|s| s.trim().to_string())
         .filter(|s| !s.is_empty())
 }
 
+#[cfg(not(windows))]
 const ABOUT_INTRO: &str =
     "Desktop app for exploring time-series CSV output produced by RASOrbit.";
 
+#[cfg(not(windows))]
 fn about_metadata(handle: &tauri::AppHandle) -> AboutMetadata<'static> {
     let pkg = handle.package_info();
     let config = handle.config();
@@ -141,6 +148,7 @@ fn about_metadata(handle: &tauri::AppHandle) -> AboutMetadata<'static> {
     }
 }
 
+#[cfg(not(windows))]
 fn about_authors_list(publisher: &Option<String>) -> Option<Vec<String>> {
     let p = publisher.as_ref()?.trim();
     if p.is_empty() {
@@ -199,6 +207,18 @@ fn about_macos_credits(
     }
 }
 
+/// Native OS menu (macOS/Linux and non-Windows). On Windows we use in-app Fluent menus instead.
+#[cfg(not(windows))]
+fn refresh_native_menu(app: &tauri::AppHandle, state: &Arc<AppState>) {
+    if let Ok(menu) = build_app_menu(app, state) {
+        let _ = app.set_menu(menu);
+    }
+}
+
+#[cfg(windows)]
+fn refresh_native_menu(_app: &tauri::AppHandle, _state: &Arc<AppState>) {}
+
+#[cfg(not(windows))]
 fn build_app_menu(handle: &tauri::AppHandle, state: &AppState) -> tauri::Result<Menu<tauri::Wry>> {
     let file_submenu = build_file_submenu(handle, state)?;
 
@@ -308,9 +328,7 @@ fn set_export_charts_enabled(
         .write()
         .map(|mut g| *g = enabled)
         .map_err(|e| e.to_string())?;
-    if let Ok(menu) = build_app_menu(&app, &state) {
-        let _ = app.set_menu(menu);
-    }
+    refresh_native_menu(&app, &*state);
     Ok(())
 }
 
@@ -325,9 +343,7 @@ fn set_view_columns_enabled(
         .write()
         .map(|mut g| *g = enabled)
         .map_err(|e| e.to_string())?;
-    if let Ok(menu) = build_app_menu(&app, &state) {
-        let _ = app.set_menu(menu);
-    }
+    refresh_native_menu(&app, &*state);
     Ok(())
 }
 
@@ -342,9 +358,7 @@ fn set_location_enabled(
         .write()
         .map(|mut g| *g = enabled)
         .map_err(|e| e.to_string())?;
-    if let Ok(menu) = build_app_menu(&app, &state) {
-        let _ = app.set_menu(menu);
-    }
+    refresh_native_menu(&app, &*state);
     Ok(())
 }
 
@@ -369,10 +383,27 @@ fn add_recent(
         drop(recents);
         save_recents_to_store(&app, &paths).map_err(|e| e.to_string())?;
     }
-    if let Ok(menu) = build_app_menu(&app, &state) {
-        let _ = app.set_menu(menu);
-    }
+    refresh_native_menu(&app, &*state);
     Ok(())
+}
+
+#[tauri::command]
+fn get_recent_files(state: tauri::State<Arc<AppState>>) -> Vec<String> {
+    state
+        .recent_files
+        .read()
+        .map(|r| {
+            r.iter()
+                .take(MAX_RECENTS)
+                .map(|p| p.to_string_lossy().into_owned())
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+#[tauri::command]
+fn request_exit(app: tauri::AppHandle) {
+    app.exit(0);
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -392,6 +423,8 @@ pub fn run() {
             set_export_charts_enabled,
             set_view_columns_enabled,
             set_location_enabled,
+            get_recent_files,
+            request_exit,
         ])
         .setup(move |app| {
             // Load persistent recents into state
@@ -426,8 +459,11 @@ pub fn run() {
                 }
             }
 
-            let menu = build_app_menu(app.handle(), &state).map_err(|e| e.to_string())?;
-            app.set_menu(menu).map_err(|e| e.to_string())?;
+            #[cfg(not(windows))]
+            {
+                let menu = build_app_menu(app.handle(), &state).map_err(|e| e.to_string())?;
+                app.set_menu(menu).map_err(|e| e.to_string())?;
+            }
             Ok(())
         })
         .build(tauri::generate_context!())

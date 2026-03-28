@@ -8,6 +8,7 @@ import { Text, tokens, Toolbar, ToolbarButton, ToolbarGroup } from "@fluentui/re
 import { Add16Regular, Subtract16Regular } from "@fluentui/react-icons";
 import type { Theme } from "@fluentui/react-theme";
 import type { Col, RunFile } from "./RunFile";
+import { ChartErrorBoundary } from "./ChartErrorBoundary";
 import worldGeoJson from "./world.json";
 import {
   formatVal,
@@ -57,8 +58,12 @@ const MAP_ZOOM_MIN = 1;
 const MAP_ZOOM_MAX = 20;
 
 function readGeoZoom(chart: ECharts): number {
-  const opt = chart.getOption() as { geo?: Record<string, unknown> | Record<string, unknown>[] };
-  const geo = opt.geo;
+  const opt = chart.getOption() as unknown;
+  // getOption() can be null/empty briefly after init (e.g. WebKit) before `geo` is merged in.
+  if (opt == null || typeof opt !== "object") {
+    return 1;
+  }
+  const geo = (opt as { geo?: Record<string, unknown> | Record<string, unknown>[] }).geo;
   const g = Array.isArray(geo) ? geo[0] : geo;
   const curRaw = g && typeof g === "object" && "zoom" in g ? Number((g as { zoom?: number }).zoom) : 1;
   const cur = Number.isFinite(curRaw) ? curRaw : 1;
@@ -612,81 +617,83 @@ export const ChartGrid = forwardRef<ChartGridRef, ChartGridProps>(
             }}
             style={isMapChart ? { position: "relative" } : undefined}
           >
-            {isMapChart && (
-              <div
+            <ChartErrorBoundary chartLabel={selection.label} theme={theme}>
+              {isMapChart && (
+                <div
+                  style={{
+                    position: "absolute",
+                    top: tokens.spacingVerticalM,
+                    right: tokens.spacingHorizontalM,
+                    zIndex: 1,
+                    display: "flex",
+                    alignItems: "center",
+                    gap: tokens.spacingHorizontalS,
+                    padding: `${tokens.spacingVerticalXS} ${tokens.spacingHorizontalS}`,
+                    borderRadius: borderRadius,
+                    border: `1px solid ${tokens.colorNeutralStrokeAlpha}`,
+                    backgroundColor: `color-mix(in srgb, ${tokens.colorNeutralBackground2} 68%, transparent)`,
+                    boxShadow: theme.shadow8,
+                  }}
+                >
+                  <Text
+                    size={200}
+                    style={{
+                      color: chartSubtleText,
+                      whiteSpace: "nowrap",
+                      userSelect: "none",
+                    }}
+                  >
+                    Zoom
+                  </Text>
+                  <Toolbar
+                    size="small"
+                    aria-label="Map zoom"
+                    style={{
+                      backgroundColor: "transparent",
+                      boxShadow: "none",
+                      padding: 0,
+                      minHeight: "auto",
+                    }}
+                  >
+                    <ToolbarGroup>
+                      <ToolbarButton
+                        aria-label="Zoom in on map"
+                        icon={<Add16Regular />}
+                        disabled={mapZoomInDisabled}
+                        onClick={() => {
+                          const c = mapChartByKeyRef.current.get(selection.key);
+                          if (!c) return;
+                          const next = adjustMapGeoZoom(c, 1.25);
+                          setMapGeoZoom((prev) => ({ ...prev, [selection.key]: next }));
+                        }}
+                      />
+                      <ToolbarButton
+                        aria-label="Zoom out on map"
+                        icon={<Subtract16Regular />}
+                        disabled={mapZoomOutDisabled}
+                        onClick={() => {
+                          const c = mapChartByKeyRef.current.get(selection.key);
+                          if (!c) return;
+                          const next = adjustMapGeoZoom(c, 1 / 1.25);
+                          setMapGeoZoom((prev) => ({ ...prev, [selection.key]: next }));
+                        }}
+                      />
+                    </ToolbarGroup>
+                  </Toolbar>
+                </div>
+              )}
+              <ReactEChartsCore
+                echarts={echarts}
+                ref={setReactEChartsRef}
+                option={option}
                 style={{
-                  position: "absolute",
-                  top: tokens.spacingVerticalM,
-                  right: tokens.spacingHorizontalM,
-                  zIndex: 1,
-                  display: "flex",
-                  alignItems: "center",
-                  gap: tokens.spacingHorizontalS,
-                  padding: `${tokens.spacingVerticalXS} ${tokens.spacingHorizontalS}`,
-                  borderRadius: borderRadius,
-                  border: `1px solid ${tokens.colorNeutralStrokeAlpha}`,
-                  backgroundColor: `color-mix(in srgb, ${tokens.colorNeutralBackground2} 68%, transparent)`,
-                  boxShadow: theme.shadow8,
+                  width: "100%",
+                  height: isMapChart ? "clamp(300px, 56vw, 740px)" : "clamp(200px, 44vw, 520px)",
+                  minHeight: isMapChart ? MAP_CHART_MIN_HEIGHT : LINE_CHART_MIN_HEIGHT,
                 }}
-              >
-                <Text
-                  size={200}
-                  style={{
-                    color: chartSubtleText,
-                    whiteSpace: "nowrap",
-                    userSelect: "none",
-                  }}
-                >
-                  Zoom
-                </Text>
-                <Toolbar
-                  size="small"
-                  aria-label="Map zoom"
-                  style={{
-                    backgroundColor: "transparent",
-                    boxShadow: "none",
-                    padding: 0,
-                    minHeight: "auto",
-                  }}
-                >
-                  <ToolbarGroup>
-                    <ToolbarButton
-                      aria-label="Zoom in on map"
-                      icon={<Add16Regular />}
-                      disabled={mapZoomInDisabled}
-                      onClick={() => {
-                        const c = mapChartByKeyRef.current.get(selection.key);
-                        if (!c) return;
-                        const next = adjustMapGeoZoom(c, 1.25);
-                        setMapGeoZoom((prev) => ({ ...prev, [selection.key]: next }));
-                      }}
-                    />
-                    <ToolbarButton
-                      aria-label="Zoom out on map"
-                      icon={<Subtract16Regular />}
-                      disabled={mapZoomOutDisabled}
-                      onClick={() => {
-                        const c = mapChartByKeyRef.current.get(selection.key);
-                        if (!c) return;
-                        const next = adjustMapGeoZoom(c, 1 / 1.25);
-                        setMapGeoZoom((prev) => ({ ...prev, [selection.key]: next }));
-                      }}
-                    />
-                  </ToolbarGroup>
-                </Toolbar>
-              </div>
-            )}
-            <ReactEChartsCore
-              echarts={echarts}
-              ref={setReactEChartsRef}
-              option={option}
-              style={{
-                width: "100%",
-                height: isMapChart ? "clamp(300px, 56vw, 740px)" : "clamp(200px, 44vw, 520px)",
-                minHeight: isMapChart ? MAP_CHART_MIN_HEIGHT : LINE_CHART_MIN_HEIGHT,
-              }}
-              onChartReady={(chart) => handleChartReady(chart, selection.kind, selection.key)}
-            />
+                onChartReady={(chart) => handleChartReady(chart, selection.kind, selection.key)}
+              />
+            </ChartErrorBoundary>
           </div>
         );
       })}

@@ -92,7 +92,8 @@ jobs:
           # macOS non-tag: build without signing so CI works without cert
           args: ${{ matrix.platform == 'macos-latest' && (startsWith(github.ref, 'refs/tags/') && '--bundles app' || '--bundles app --no-sign') || '--bundles appimage' }}
 
-      # Windows: tauri-action only looks for msi/nsis; we want the raw .exe so build and upload manually
+      # Windows: tauri-action only looks for msi/nsis; we want the raw .exe so build and upload manually.
+      # Use the same command locally to reproduce CI: npm run tauri build -- --no-bundle
       - name: Build Tauri app (Windows)
         if: matrix.platform == 'windows-latest'
         run: npm run tauri build -- --no-bundle
