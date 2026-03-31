@@ -106,6 +106,11 @@ function App({ theme }: AppProps) {
     invoke("set_location_enabled", { enabled }).catch(() => {});
   }, [runFile]);
 
+  useEffect(() => {
+    const enabled = runFile != null && runFile.globeColumns() != null;
+    invoke("set_globe_enabled", { enabled }).catch(() => {});
+  }, [runFile]);
+
   useLayoutEffect(() => {
     let cancelled = false;
     let unlisteners: (() => void)[] = [];
@@ -164,6 +169,7 @@ function App({ theme }: AppProps) {
   const viewCommandsEnabled = !!runFile && !loadError && !openingFile;
   const exportEnabled = viewCommandsEnabled && selectedColumns.length > 0;
   const locationEnabled = viewCommandsEnabled && runFile?.locationColumns() != null;
+  const globeEnabled = viewCommandsEnabled && runFile?.globeColumns() != null;
 
   const windowsMenuProps = showWindowsMenu ? (
     <WindowsAppMenuBar
@@ -171,6 +177,7 @@ function App({ theme }: AppProps) {
       viewCommandsEnabled={viewCommandsEnabled}
       exportEnabled={exportEnabled}
       locationEnabled={!!locationEnabled}
+      globeEnabled={!!globeEnabled}
       recentListKey={currentFilePath}
     />
   ) : null;

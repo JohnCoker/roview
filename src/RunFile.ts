@@ -198,6 +198,18 @@ export class RunFile {
     if (lat && long && lat.hasRange() && long.hasRange()) return { lat, long };
   }
 
+  altitudeColumn(): Col | undefined {
+    const col = this.getColumn("Alt") || this.getColumn("Geod-Alt");
+    return col?.hasData() ? col : undefined;
+  }
+
+  /** Location + altitude columns required for the 3D globe trace. */
+  globeColumns(): { lat: Col; long: Col; alt: Col } | undefined {
+    const loc = this.locationColumns();
+    const alt = this.altitudeColumn();
+    if (loc && alt) return { ...loc, alt };
+  }
+
   dataColumns(): Col[] {
     const timeCol = this.timeColumn();
     return this.columns.filter(c => c != timeCol && c.hasRange());

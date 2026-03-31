@@ -17,6 +17,7 @@ pub struct AppState {
     pub export_charts_enabled: RwLock<bool>,
     pub view_columns_enabled: RwLock<bool>,
     pub location_enabled: RwLock<bool>,
+    pub globe_enabled: RwLock<bool>,
 }
 
 #[cfg(not(windows))]
@@ -232,6 +233,11 @@ fn build_app_menu(handle: &tauri::AppHandle, state: &AppState) -> tauri::Result<
         .read()
         .map(|g| *g)
         .unwrap_or(false);
+    let globe_enabled = state
+        .globe_enabled
+        .read()
+        .map(|g| *g)
+        .unwrap_or(false);
     let first_four_item =
         MenuItemBuilder::with_id("view-first-4-columns", "First 4 Columns").enabled(view_enabled).build(handle)?;
     let all_columns_item =
@@ -240,6 +246,8 @@ fn build_app_menu(handle: &tauri::AppHandle, state: &AppState) -> tauri::Result<
         MenuItemBuilder::with_id("view-select-columns", "Select Columns…").enabled(view_enabled).build(handle)?;
     let map_trace_item =
         MenuItemBuilder::with_id("view-map-trace", "Map Trace").enabled(location_enabled).build(handle)?;
+    let globe_trace_item =
+        MenuItemBuilder::with_id("view-globe-trace", "Globe Trace").enabled(globe_enabled).build(handle)?;
 
     let view_submenu = SubmenuBuilder::with_id(handle, "view", "View")
         .item(&first_four_item)
@@ -247,6 +255,7 @@ fn build_app_menu(handle: &tauri::AppHandle, state: &AppState) -> tauri::Result<
         .item(&select_columns_item)
         .separator()
         .item(&map_trace_item)
+        .item(&globe_trace_item)
         .build()?;
 
     let app_name = handle
@@ -363,6 +372,21 @@ fn set_location_enabled(
 }
 
 #[tauri::command]
+fn set_globe_enabled(
+    enabled: bool,
+    app: tauri::AppHandle,
+    state: tauri::State<Arc<AppState>>,
+) -> Result<(), String> {
+    state
+        .globe_enabled
+        .write()
+        .map(|mut g| *g = enabled)
+        .map_err(|e| e.to_string())?;
+    refresh_native_menu(&app, &*state);
+    Ok(())
+}
+
+#[tauri::command]
 fn add_recent(
     path: String,
     app: tauri::AppHandle,
@@ -423,6 +447,7 @@ pub fn run() {
             set_export_charts_enabled,
             set_view_columns_enabled,
             set_location_enabled,
+            set_globe_enabled,
             get_recent_files,
             request_exit,
         ])
@@ -539,6 +564,12 @@ pub fn run() {
                 if id == "view-map-trace" {
                     if let Some(w) = app_handle.get_webview_window("main") {
                         let _ = w.emit("view-map-trace", ());
+                    }
+                    return;
+                }
+                if id == "view-globe-trace" {
+                    if let Some(w) = app_handle.get_webview_window("main") {
+                        let _ = w.emit("view-globe-trace", ());
                     }
                     return;
                 }

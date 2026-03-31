@@ -53,6 +53,8 @@ export interface WindowsAppMenuBarProps {
   exportEnabled: boolean;
   /** Map Trace row is available. */
   locationEnabled: boolean;
+  /** Globe Trace row is available (location + altitude). */
+  globeEnabled: boolean;
   /** Refetch Open Recent when this changes (e.g. after opening a file). */
   recentListKey: string | null;
 }
@@ -61,6 +63,7 @@ export function WindowsAppMenuBar({
   viewCommandsEnabled,
   exportEnabled,
   locationEnabled,
+  globeEnabled,
   recentListKey,
 }: WindowsAppMenuBarProps) {
   const [recents, setRecents] = useState<string[]>([]);
@@ -226,6 +229,14 @@ export function WindowsAppMenuBar({
                 }}
               >
                 Map Trace
+              </MenuItem>
+              <MenuItem
+                disabled={!viewCommandsEnabled || !globeEnabled}
+                onClick={() => {
+                  if (viewCommandsEnabled && globeEnabled) void emit("view-globe-trace", undefined);
+                }}
+              >
+                Globe Trace
               </MenuItem>
             </MenuList>
           </MenuPopover>

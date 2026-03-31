@@ -5,11 +5,13 @@ import type { ECharts } from "echarts";
 import { save as saveDialog, message as showMessage } from "@tauri-apps/plugin-dialog";
 import { writeFile } from "@tauri-apps/plugin-fs";
 import { Text, tokens, Toolbar, ToolbarButton, ToolbarGroup } from "@fluentui/react-components";
-import { Add16Regular, Subtract16Regular } from "@fluentui/react-icons";
+import { Add16Regular, Subtract16Regular, ZoomFit16Regular, MyLocation16Regular } from "@fluentui/react-icons";
 import type { Theme } from "@fluentui/react-theme";
 import type { Col, RunFile } from "./RunFile";
 import { ChartErrorBoundary } from "./ChartErrorBoundary";
 import worldGeoJson from "./world.json";
+import "echarts-gl";
+import { distanceToMeters } from "./converters";
 import {
   formatVal,
   sanitizeFileName,
@@ -22,8 +24,11 @@ import {
   LAT_LONG_LINE_SELECTION,
   MAP_TRACE_LABEL,
   MAP_TRACE_SELECTION,
+  GLOBE_TRACE_LABEL,
+  GLOBE_TRACE_SELECTION,
   isLatLongLineSelection,
   isMapTraceSelection,
+  isGlobeTraceSelection,
 } from "./util";
 
 export interface ChartGridProps {
@@ -41,11 +46,14 @@ type ReactEChartsRef = { getEchartsInstance: () => ECharts };
 type LineChartSelection = { key: string; label: string; kind: "line"; col: Col };
 type MapChartSelection = { key: string; label: string; kind: "map" };
 type LatLongLineChartSelection = { key: string; label: string; kind: "latLong" };
-type ChartSelection = LineChartSelection | MapChartSelection | LatLongLineChartSelection;
+type GlobeChartSelection = { key: string; label: string; kind: "globe" };
+type ChartSelection = LineChartSelection | MapChartSelection | LatLongLineChartSelection | GlobeChartSelection;
 
 const WORLD_MAP_NAME = "roview-world";
 const LINE_CHART_MIN_HEIGHT = 200;
 const MAP_CHART_MIN_HEIGHT = 320;
+const GLOBE_RADIUS = 100;
+const EARTH_RADIUS_M = 6_371_000;
 
 function normalizeLongitudeDegrees(longitude: number): number {
   let normalized = longitude;
@@ -56,6 +64,9 @@ function normalizeLongitudeDegrees(longitude: number): number {
 
 const MAP_ZOOM_MIN = 1;
 const MAP_ZOOM_MAX = 20;
+const GLOBE_DIST_DEFAULT = 200;
+const GLOBE_DIST_MIN = 101;
+const GLOBE_DIST_MAX = 500;
 
 function readGeoZoom(chart: ECharts): number {
   const opt = chart.getOption() as unknown;
@@ -75,6 +86,25 @@ function adjustMapGeoZoom(chart: ECharts, factor: number): number {
   const cur = readGeoZoom(chart);
   const next = Math.min(MAP_ZOOM_MAX, Math.max(MAP_ZOOM_MIN, cur * factor));
   chart.setOption({ geo: { zoom: next } });
+  return next;
+}
+
+function readGlobeDistance(chart: ECharts): number {
+  const opt = chart.getOption() as unknown;
+  if (opt == null || typeof opt !== "object") return GLOBE_DIST_DEFAULT;
+  const globe = (opt as { globe?: Record<string, unknown> | Record<string, unknown>[] }).globe;
+  const g = Array.isArray(globe) ? globe[0] : globe;
+  if (g == null || typeof g !== "object") return GLOBE_DIST_DEFAULT;
+  const vc = (g as { viewControl?: Record<string, unknown> }).viewControl;
+  const raw = vc && typeof vc === "object" && "distance" in vc ? Number((vc as { distance?: number }).distance) : GLOBE_DIST_DEFAULT;
+  const cur = Number.isFinite(raw) ? raw : GLOBE_DIST_DEFAULT;
+  return Math.min(GLOBE_DIST_MAX, Math.max(GLOBE_DIST_MIN, cur));
+}
+
+function adjustGlobeDistance(chart: ECharts, factor: number): number {
+  const cur = readGlobeDistance(chart);
+  const next = Math.min(GLOBE_DIST_MAX, Math.max(GLOBE_DIST_MIN, cur * factor));
+  chart.setOption({ globe: { viewControl: { distance: next } } });
   return next;
 }
 
@@ -139,6 +169,11 @@ export const ChartGrid = forwardRef<ChartGridRef, ChartGridProps>(
         ? [{ key: LAT_LONG_LINE_SELECTION, label: LAT_LONG_LINE_LABEL, kind: "latLong" as const }]
         : [];
     }
+    if (isGlobeTraceSelection(name)) {
+      return runFile.globeColumns() != null
+        ? [{ key: GLOBE_TRACE_SELECTION, label: GLOBE_TRACE_LABEL, kind: "globe" as const }]
+        : [];
+    }
     const col = runFile.getColumn(name);
     return col != null ? [{ key: col.name, label: col.name, kind: "line" as const, col }] : [];
   });
@@ -171,6 +206,28 @@ export const ChartGrid = forwardRef<ChartGridRef, ChartGridProps>(
 
   /** Geo zoom per map chart (for +/- disabled at limits). */
   const [mapGeoZoom, setMapGeoZoom] = useState<Record<string, number>>({});
+  /** Globe camera distance per globe chart (for +/- disabled at limits). */
+  const [globeDist, setGlobeDist] = useState<Record<string, number>>({});
+
+  /** Capture-phase wheel handler for globe charts: forward scroll to the page instead of echarts-gl. */
+  const globeWheelRefs = useRef<Map<string, { el: HTMLDivElement; handler: (e: WheelEvent) => void }>>(new Map());
+  const attachGlobeWheelCapture = (key: string, el: HTMLDivElement | null) => {
+    const prev = globeWheelRefs.current.get(key);
+    if (prev?.el === el) return;
+    if (prev) {
+      prev.el.removeEventListener("wheel", prev.handler, true);
+      globeWheelRefs.current.delete(key);
+    }
+    if (el == null) return;
+    const handler = (e: WheelEvent) => {
+      e.stopPropagation();
+      e.preventDefault();
+      const scrollContainer = el.closest(".chart-grid-scroll");
+      if (scrollContainer) scrollContainer.scrollTop += e.deltaY;
+    };
+    el.addEventListener("wheel", handler, { capture: true, passive: false });
+    globeWheelRefs.current.set(key, { el, handler });
+  };
 
   useEffect(() => {
     if (!contextMenu) return;
@@ -183,13 +240,19 @@ export const ChartGrid = forwardRef<ChartGridRef, ChartGridProps>(
     return () => window.removeEventListener("mousedown", onMouseDown);
   }, [contextMenu]);
 
+  const scrolledForKeyRef = useRef<string | null>(null);
   useEffect(() => {
-    if (scrollTargetKey == null) return;
+    if (scrollTargetKey == null) {
+      scrolledForKeyRef.current = null;
+      return;
+    }
+    if (scrolledForKeyRef.current === scrollTargetKey) return;
     const chartEl = chartItemRefs.current[scrollTargetKey];
     if (!(chartEl instanceof HTMLElement)) return;
     const scrollContainer = chartEl.closest(".chart-grid-scroll");
     if (!(scrollContainer instanceof HTMLElement)) return;
 
+    scrolledForKeyRef.current = scrollTargetKey;
     const containerRect = scrollContainer.getBoundingClientRect();
     const chartRect = chartEl.getBoundingClientRect();
     const above = chartRect.top < containerRect.top;
@@ -260,10 +323,14 @@ export const ChartGrid = forwardRef<ChartGridRef, ChartGridProps>(
     }
   };
 
-  const handleChartReady = (chart: ECharts, kind: "line" | "map" | "latLong", selectionKey: string) => {
+  const handleChartReady = (chart: ECharts, kind: "line" | "map" | "latLong" | "globe", selectionKey: string) => {
     if (kind === "map") {
       mapChartByKeyRef.current.set(selectionKey, chart);
       setMapGeoZoom((prev) => ({ ...prev, [selectionKey]: readGeoZoom(chart) }));
+    }
+    if (kind === "globe") {
+      mapChartByKeyRef.current.set(selectionKey, chart);
+      setGlobeDist((prev) => ({ ...prev, [selectionKey]: readGlobeDistance(chart) }));
     }
     if (kind !== "line") return;
     chartRefs.current.push(chart);
@@ -318,6 +385,8 @@ export const ChartGrid = forwardRef<ChartGridRef, ChartGridProps>(
       )}
       {chartSelections.map((selection, index) => {
         const isMapChart = selection.kind === "map";
+        const isGlobeChart = selection.kind === "globe";
+        const isSpatialChart = isMapChart || isGlobeChart;
         const mapZoom = isMapChart ? (mapGeoZoom[selection.key] ?? 1) : 1;
         const option = (() => {
           if (selection.kind === "map") {
@@ -325,6 +394,10 @@ export const ChartGrid = forwardRef<ChartGridRef, ChartGridProps>(
             if (locationColumns == null) return null;
             const latValues = runFile.getColumnValues(locationColumns.lat.name);
             const longValues = runFile.getColumnValues(locationColumns.long.name);
+            const latKind = locationColumns.lat.kind();
+            const latUnit = locationColumns.lat.unit();
+            const longKind = locationColumns.long.kind();
+            const longUnit = locationColumns.long.unit();
             const points = latValues
               .map((lat, i) => {
                 const long = longValues[i];
@@ -333,10 +406,6 @@ export const ChartGrid = forwardRef<ChartGridRef, ChartGridProps>(
                 return { value: [normalizeLongitudeDegrees(long), lat, time], rawLong: long };
               })
               .filter((point): point is { value: [number, number, number | null]; rawLong: number } => point != null);
-            const latKind = locationColumns.lat.kind();
-            const latUnit = locationColumns.lat.unit();
-            const longKind = locationColumns.long.kind();
-            const longUnit = locationColumns.long.unit();
             const mapFill = theme.colorNeutralBackground3 ?? theme.colorNeutralBackground2;
             const mapHighlight = theme.colorNeutralBackground4 ?? mapFill;
 
@@ -395,6 +464,120 @@ export const ChartGrid = forwardRef<ChartGridRef, ChartGridProps>(
                   symbolSize: 4,
                   z: 3,
                   itemStyle: { color: chartAccent, opacity: 1 },
+                },
+              ],
+            };
+          }
+          if (selection.kind === "globe") {
+            const globeCols = runFile.globeColumns();
+            if (globeCols == null) return null;
+            const altToMeters = distanceToMeters(globeCols.alt);
+            const latValues = runFile.getColumnValues(globeCols.lat.name);
+            const longValues = runFile.getColumnValues(globeCols.long.name);
+            const altValues = runFile.getColumnValues(globeCols.alt.name);
+            const latKind = globeCols.lat.kind();
+            const latUnit = globeCols.lat.unit();
+            const longKind = globeCols.long.kind();
+            const longUnit = globeCols.long.unit();
+            const altKind = globeCols.alt.kind();
+            const altUnit = globeCols.alt.unit();
+            const metersToGlobe = GLOBE_RADIUS / EARTH_RADIUS_M;
+            const globePoints: { value: [number, number, number]; rawLong: number; rawLat: number; rawAlt: number | null; time: number | null }[] = [];
+            let maxGlobeAlt = 0;
+            let latSum = 0;
+            let longSum = 0;
+            let pointCount = 0;
+            for (let i = 0; i < latValues.length; i++) {
+              const lat = latValues[i];
+              const long = longValues[i];
+              const rawAlt = altValues[i];
+              const altM = altToMeters ? altToMeters(rawAlt) : rawAlt;
+              if (lat == null || long == null || altM == null) continue;
+              const globeAlt = altM * metersToGlobe;
+              if (globeAlt > maxGlobeAlt) maxGlobeAlt = globeAlt;
+              const normLong = normalizeLongitudeDegrees(long);
+              latSum += lat;
+              longSum += normLong;
+              pointCount++;
+              globePoints.push({
+                value: [normLong, lat, globeAlt],
+                rawLong: long,
+                rawLat: lat,
+                rawAlt: rawAlt,
+                time: timeValues[i] ?? null,
+              });
+            }
+            const centerLat = pointCount > 0 ? latSum / pointCount : 0;
+            const centerLong = pointCount > 0 ? longSum / pointCount : 0;
+
+            return {
+              backgroundColor: theme.colorNeutralBackground1,
+              tooltip: {
+                trigger: "item" as const,
+                backgroundColor: tooltipBg,
+                borderColor: tooltipBorder,
+                borderWidth: 1,
+                padding: 8,
+                textStyle: {
+                  fontFamily: chartFontFamily,
+                  fontWeight: theme.fontWeightSemibold,
+                  color: chartText,
+                },
+                formatter: (params: any) => {
+                  const d = params?.data as { rawLong?: number; rawLat?: number; rawAlt?: number | null; time?: number | null } | undefined;
+                  if (!d) return "";
+                  const timeLabel = `${timeCol.kind()}: ${formatVal(d.time ?? null)}${
+                    timeCol.unit() ? ` ${timeCol.unit()}` : ""
+                  }`;
+                  const latLabel = `${latKind}: ${formatVal(d.rawLat ?? null)}${
+                    latUnit ? ` ${latUnit}` : ""
+                  }`;
+                  const longLabel = `${longKind}: ${formatVal(d.rawLong ?? null)}${
+                    longUnit ? ` ${longUnit}` : ""
+                  }`;
+                  const altLabel = `${altKind}: ${formatVal(d.rawAlt ?? null)}${
+                    altUnit ? ` ${altUnit}` : ""
+                  }`;
+                  return `${timeLabel}<br/>${latLabel}<br/>${longLabel}<br/>${altLabel}`;
+                },
+              },
+              globe: {
+                globeRadius: GLOBE_RADIUS,
+                globeOuterRadius: GLOBE_RADIUS + maxGlobeAlt,
+                baseTexture: "/world-surface.jpg",
+                heightTexture: "/world-height.jpg",
+                shading: "lambert" as const,
+                atmosphere: { show: false },
+                viewControl: (() => {
+                  const base = { autoRotate: false, zoomSensitivity: 0, distance: globeDist[selection.key] ?? GLOBE_DIST_DEFAULT };
+                  const existing = mapChartByKeyRef.current.get(selection.key);
+                  if (existing) {
+                    const opt = existing.getOption() as Record<string, unknown>;
+                    const g = Array.isArray(opt?.globe) ? (opt.globe as Record<string, unknown>[])[0] : opt?.globe as Record<string, unknown> | undefined;
+                    const vc = g?.viewControl as { alpha?: number; beta?: number } | undefined;
+                    if (vc && typeof vc.alpha === "number" && typeof vc.beta === "number") {
+                      return { ...base, alpha: vc.alpha, beta: vc.beta };
+                    }
+                  }
+                  return { ...base, alpha: centerLat, beta: centerLong + 90 };
+                })(),
+                light: {
+                  ambient: { intensity: 1 },
+                  main: { intensity: 0 },
+                },
+              },
+              series: [
+                {
+                  type: "scatter3D" as const,
+                  coordinateSystem: "globe" as const,
+                  symbolSize: 3,
+                  label: { show: false },
+                  emphasis: { label: { show: false } },
+                  itemStyle: {
+                    color: chartAccent,
+                    opacity: 0.85,
+                  },
+                  data: globePoints,
                 },
               ],
             };
@@ -603,6 +786,9 @@ export const ChartGrid = forwardRef<ChartGridRef, ChartGridProps>(
 
         const mapZoomInDisabled = isMapChart && mapZoom >= MAP_ZOOM_MAX - 1e-9;
         const mapZoomOutDisabled = isMapChart && mapZoom <= MAP_ZOOM_MIN + 1e-9;
+        const curGlobeDist = isGlobeChart ? (globeDist[selection.key] ?? GLOBE_DIST_DEFAULT) : GLOBE_DIST_DEFAULT;
+        const globeZoomInDisabled = isGlobeChart && curGlobeDist <= GLOBE_DIST_MIN + 1e-9;
+        const globeZoomOutDisabled = isGlobeChart && curGlobeDist >= GLOBE_DIST_MAX - 1e-9;
 
         return (
           <div
@@ -610,12 +796,13 @@ export const ChartGrid = forwardRef<ChartGridRef, ChartGridProps>(
             className="chart-grid-item"
             ref={(el) => {
               chartItemRefs.current[selection.key] = el;
+              if (isGlobeChart) attachGlobeWheelCapture(selection.key, el);
             }}
             onContextMenu={(e) => {
               e.preventDefault();
               setContextMenu({ x: e.clientX, y: e.clientY, chartIndex: index });
             }}
-            style={isMapChart ? { position: "relative" } : undefined}
+            style={isSpatialChart ? { position: "relative" } : undefined}
           >
             <ChartErrorBoundary chartLabel={selection.label} theme={theme}>
               {isMapChart && (
@@ -678,6 +865,90 @@ export const ChartGrid = forwardRef<ChartGridRef, ChartGridProps>(
                           setMapGeoZoom((prev) => ({ ...prev, [selection.key]: next }));
                         }}
                       />
+                      <ToolbarButton
+                        aria-label="Reset map view"
+                        icon={<ZoomFit16Regular />}
+                        onClick={() => {
+                          const c = mapChartByKeyRef.current.get(selection.key);
+                          if (!c) return;
+                          c.dispatchAction({ type: "restore" });
+                          setMapGeoZoom((prev) => ({ ...prev, [selection.key]: 1 }));
+                        }}
+                      />
+                    </ToolbarGroup>
+                  </Toolbar>
+                </div>
+              )}
+              {isGlobeChart && (
+                <div
+                  style={{
+                    position: "absolute",
+                    top: tokens.spacingVerticalM,
+                    right: tokens.spacingHorizontalM,
+                    zIndex: 1,
+                    display: "flex",
+                    alignItems: "center",
+                    gap: tokens.spacingHorizontalS,
+                    padding: `${tokens.spacingVerticalXS} ${tokens.spacingHorizontalS}`,
+                    borderRadius: borderRadius,
+                    border: `1px solid ${tokens.colorNeutralStrokeAlpha}`,
+                    backgroundColor: `color-mix(in srgb, ${tokens.colorNeutralBackground2} 68%, transparent)`,
+                    boxShadow: theme.shadow8,
+                  }}
+                >
+                  <Text
+                    size={200}
+                    style={{
+                      color: chartSubtleText,
+                      whiteSpace: "nowrap",
+                      userSelect: "none",
+                    }}
+                  >
+                    Zoom
+                  </Text>
+                  <Toolbar
+                    size="small"
+                    aria-label="Globe zoom"
+                    style={{
+                      backgroundColor: "transparent",
+                      boxShadow: "none",
+                      padding: 0,
+                      minHeight: "auto",
+                    }}
+                  >
+                    <ToolbarGroup>
+                      <ToolbarButton
+                        aria-label="Zoom in on globe"
+                        icon={<Add16Regular />}
+                        disabled={globeZoomInDisabled}
+                        onClick={() => {
+                          const c = mapChartByKeyRef.current.get(selection.key);
+                          if (!c) return;
+                          const next = adjustGlobeDistance(c, 1 / 1.25);
+                          setGlobeDist((prev) => ({ ...prev, [selection.key]: next }));
+                        }}
+                      />
+                      <ToolbarButton
+                        aria-label="Zoom out on globe"
+                        icon={<Subtract16Regular />}
+                        disabled={globeZoomOutDisabled}
+                        onClick={() => {
+                          const c = mapChartByKeyRef.current.get(selection.key);
+                          if (!c) return;
+                          const next = adjustGlobeDistance(c, 1.25);
+                          setGlobeDist((prev) => ({ ...prev, [selection.key]: next }));
+                        }}
+                      />
+                      <ToolbarButton
+                        aria-label="Reset globe view"
+                        icon={<MyLocation16Regular />}
+                        onClick={() => {
+                          const c = mapChartByKeyRef.current.get(selection.key);
+                          if (!c) return;
+                          c.dispatchAction({ type: "restore" });
+                          setGlobeDist((prev) => ({ ...prev, [selection.key]: GLOBE_DIST_DEFAULT }));
+                        }}
+                      />
                     </ToolbarGroup>
                   </Toolbar>
                 </div>
@@ -688,8 +959,12 @@ export const ChartGrid = forwardRef<ChartGridRef, ChartGridProps>(
                 option={option}
                 style={{
                   width: "100%",
-                  height: isMapChart ? "clamp(300px, 56vw, 740px)" : "clamp(200px, 44vw, 520px)",
-                  minHeight: isMapChart ? MAP_CHART_MIN_HEIGHT : LINE_CHART_MIN_HEIGHT,
+                  height: isGlobeChart
+                    ? "min(100vh, 100vw)"
+                    : isMapChart
+                      ? "clamp(300px, 56vw, 740px)"
+                      : "clamp(200px, 44vw, 520px)",
+                  minHeight: isMapChart ? MAP_CHART_MIN_HEIGHT : isGlobeChart ? undefined : LINE_CHART_MIN_HEIGHT,
                 }}
                 onChartReady={(chart) => handleChartReady(chart, selection.kind, selection.key)}
               />

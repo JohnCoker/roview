@@ -11,8 +11,11 @@ import {
   LAT_LONG_LINE_SELECTION,
   MAP_TRACE_LABEL,
   MAP_TRACE_SELECTION,
+  GLOBE_TRACE_LABEL,
+  GLOBE_TRACE_SELECTION,
   isLatLongLineSelection,
   isMapTraceSelection,
+  isGlobeTraceSelection,
 } from "./util";
 
 export interface LoadedFileViewProps {
@@ -31,6 +34,7 @@ export function LoadedFileView({
   /** Stable refs so the menu-listener effect does not re-run every render (was breaking Map Trace on macOS). */
   const dataColumns = useMemo(() => runFile.dataColumns(), [runFile]);
   const locationColumns = useMemo(() => runFile.locationColumns(), [runFile]);
+  const globeColumns = useMemo(() => runFile.globeColumns(), [runFile]);
   /** Latest selection for menu handlers; keeping this off the listener effect deps avoids tearing down `listen()` on every column change. */
   const selectedColumnsRef = useRef(selectedColumns);
   selectedColumnsRef.current = selectedColumns;
@@ -41,6 +45,7 @@ export function LoadedFileView({
   const chartNames = selectedColumns.flatMap((name) => {
     if (isMapTraceSelection(name)) return locationColumns != null ? [MAP_TRACE_LABEL] : [];
     if (isLatLongLineSelection(name)) return locationColumns != null ? [LAT_LONG_LINE_LABEL] : [];
+    if (isGlobeTraceSelection(name)) return globeColumns != null ? [GLOBE_TRACE_LABEL] : [];
     return runFile.getColumn(name) != null ? [name] : [];
   });
 
@@ -74,6 +79,9 @@ export function LoadedFileView({
     if (!selectedColumns.includes(LAT_LONG_LINE_SELECTION) && scrollTargetKey === LAT_LONG_LINE_SELECTION) {
       setScrollTargetKey(null);
     }
+    if (!selectedColumns.includes(GLOBE_TRACE_SELECTION) && scrollTargetKey === GLOBE_TRACE_SELECTION) {
+      setScrollTargetKey(null);
+    }
   }, [scrollTargetKey, selectedColumns]);
 
   useEffect(() => {
@@ -103,6 +111,17 @@ export function LoadedFileView({
           setScrollTargetKey(MAP_TRACE_SELECTION);
           onSelectionChange([...sel, MAP_TRACE_SELECTION]);
         }),
+        listen("view-globe-trace", () => {
+          if (globeColumns == null) return;
+          const sel = selectedColumnsRef.current;
+          if (sel.includes(GLOBE_TRACE_SELECTION)) {
+            setScrollTargetKey(null);
+            onSelectionChange(sel.filter((name) => name !== GLOBE_TRACE_SELECTION));
+            return;
+          }
+          setScrollTargetKey(GLOBE_TRACE_SELECTION);
+          onSelectionChange([...sel, GLOBE_TRACE_SELECTION]);
+        }),
       ]);
       if (cancelled) {
         fns.forEach((u) => u());
@@ -114,7 +133,7 @@ export function LoadedFileView({
       cancelled = true;
       unlisteners.forEach((u) => u());
     };
-  }, [dataColumns, locationColumns, onSelectionChange]);
+  }, [dataColumns, locationColumns, globeColumns, onSelectionChange]);
 
   return (
     <>

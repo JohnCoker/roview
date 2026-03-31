@@ -77,6 +77,16 @@ export function isLatLongLineSelection(name: string): boolean {
   return name === LAT_LONG_LINE_SELECTION;
 }
 
+/** Special chart selection ID for the 3D globe trace. */
+export const GLOBE_TRACE_SELECTION = "__globe_trace__";
+
+/** User-facing label for the 3D globe trace chart. */
+export const GLOBE_TRACE_LABEL = "Globe Trace";
+
+export function isGlobeTraceSelection(name: string): boolean {
+  return name === GLOBE_TRACE_SELECTION;
+}
+
 /**
  * Decode a PNG/JPEG data URL to bytes, or null if invalid.
  */
