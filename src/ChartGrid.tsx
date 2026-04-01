@@ -130,7 +130,8 @@ export const ChartGrid = forwardRef<ChartGridRef, ChartGridProps>(
   /** Cartesian charts: balanced grid + ~one-letter tick–axis gap; H/V name gaps aligned. */
   /** Extra room for labels when margin increases (containLabel: false keeps multi-chart alignment). */
   const cartesianGrid = { left: 76, right: 12, top: 10, bottom: 40, containLabel: false } as const;
-  const cartesianAxisNameGap = 26;
+  const cartesianXAxisNameGap = 26;
+  const cartesianYAxisNameGap = 52;
   /** ~1 letter / “space” between tick marks and scale numbers (reviewer). */
   const cartesianAxisLabelMargin = 11;
   const cartesianAxisLine = { lineStyle: { color: chartAxis, width: chartAxisStrokePx } };
@@ -511,7 +512,7 @@ export const ChartGrid = forwardRef<ChartGridRef, ChartGridProps>(
             const centerLong = pointCount > 0 ? longSum / pointCount : 0;
 
             return {
-              backgroundColor: theme.colorNeutralBackground1,
+              backgroundColor: theme.colorNeutralBackground2,
               tooltip: {
                 trigger: "item" as const,
                 backgroundColor: tooltipBg,
@@ -638,7 +639,7 @@ export const ChartGrid = forwardRef<ChartGridRef, ChartGridProps>(
                 type: "value" as const,
                 name: locationColumns.long.name,
                 nameLocation: "middle",
-                nameGap: cartesianAxisNameGap,
+                nameGap: cartesianXAxisNameGap,
                 splitLine: cartesianSplitLine,
                 axisLine: cartesianAxisLine,
                 axisTick: cartesianAxisTick,
@@ -653,7 +654,7 @@ export const ChartGrid = forwardRef<ChartGridRef, ChartGridProps>(
                 type: "value" as const,
                 name: locationColumns.lat.name,
                 nameLocation: "middle",
-                nameGap: cartesianAxisNameGap,
+                nameGap: cartesianYAxisNameGap,
                 nameRotate: 90,
                 axisLine: cartesianAxisLine,
                 axisTick: cartesianAxisTick,
@@ -730,7 +731,7 @@ export const ChartGrid = forwardRef<ChartGridRef, ChartGridProps>(
               type: "value" as const,
               name: timeCol.name,
               nameLocation: "middle",
-              nameGap: cartesianAxisNameGap,
+              nameGap: cartesianXAxisNameGap,
               splitLine: cartesianSplitLine,
               axisLine: cartesianAxisLine,
               axisTick: cartesianAxisTick,
@@ -745,7 +746,7 @@ export const ChartGrid = forwardRef<ChartGridRef, ChartGridProps>(
               type: "value" as const,
               name: col.name,
               nameLocation: "middle",
-              nameGap: cartesianAxisNameGap,
+              nameGap: cartesianYAxisNameGap,
               nameRotate: 90,
               axisLine: cartesianAxisLine,
               axisTick: cartesianAxisTick,
@@ -802,7 +803,12 @@ export const ChartGrid = forwardRef<ChartGridRef, ChartGridProps>(
               e.preventDefault();
               setContextMenu({ x: e.clientX, y: e.clientY, chartIndex: index });
             }}
-            style={isSpatialChart ? { position: "relative" } : undefined}
+            style={{
+              border: `1px solid ${theme.colorNeutralStroke2}`,
+              borderRadius: theme.borderRadiusMedium,
+              ...(isSpatialChart ? { position: "relative" } : undefined),
+              ...(isGlobeChart ? { backgroundColor: theme.colorNeutralBackground2 } : undefined),
+            }}
           >
             <ChartErrorBoundary chartLabel={selection.label} theme={theme}>
               {isMapChart && (
