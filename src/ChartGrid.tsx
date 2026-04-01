@@ -1,4 +1,4 @@
-import { forwardRef, useImperativeHandle, useRef, useState, useEffect } from "react";
+import { forwardRef, memo, useImperativeHandle, useRef, useState, useEffect } from "react";
 import ReactEChartsCore from "echarts-for-react/lib/core";
 import * as echarts from "echarts";
 import type { ECharts } from "echarts";
@@ -36,6 +36,7 @@ export interface ChartGridProps {
   theme: Theme;
   selectedColumnNames: string[];
   scrollTargetKey?: string | null;
+  highlightTime?: number | null;
 }
 
 export interface ChartGridRef {
@@ -50,10 +51,34 @@ type GlobeChartSelection = { key: string; label: string; kind: "globe" };
 type ChartSelection = LineChartSelection | MapChartSelection | LatLongLineChartSelection | GlobeChartSelection;
 
 const WORLD_MAP_NAME = "roview-world";
+const PLAYBACK_HIGHLIGHT_SERIES_ID = "playback-highlight";
 const LINE_CHART_MIN_HEIGHT = 200;
 const MAP_CHART_MIN_HEIGHT = 320;
 const GLOBE_RADIUS = 100;
 const EARTH_RADIUS_M = 6_371_000;
+
+function findNearestByTime<T>(data: T[], getTime: (item: T) => number | null | undefined, target: number): T | undefined {
+  let best: T | undefined;
+  let bestDist = Infinity;
+  for (const item of data) {
+    const t = getTime(item);
+    if (t == null) continue;
+    const d = Math.abs(t - target);
+    if (d < bestDist) { bestDist = d; best = item; }
+  }
+  return best;
+}
+
+function playbackHighlightData<T>(
+  highlightTime: number | null | undefined,
+  data: T[],
+  getTime: (item: T) => number | null | undefined,
+  toSeriesData: (best: T) => unknown[],
+): unknown[] {
+  if (highlightTime == null) return [];
+  const best = findNearestByTime(data, getTime, highlightTime);
+  return best != null ? toSeriesData(best) : [];
+}
 
 function normalizeLongitudeDegrees(longitude: number): number {
   let normalized = longitude;
@@ -67,6 +92,15 @@ const MAP_ZOOM_MAX = 20;
 const GLOBE_DIST_DEFAULT = 200;
 const GLOBE_DIST_MIN = 101;
 const GLOBE_DIST_MAX = 500;
+/** Minimum outward nudge (globe coords) so the playback dot stays in front of the trace in WebGL depth tests. */
+const GLOBE_PLAYBACK_HIGHLIGHT_ALT_BUMP_MIN = 0.35;
+
+/** No tween on highlight updates (2D/geo; avoids lag). Globe also relies on this — see globe option `animation`. */
+const PLAYBACK_HIGHLIGHT_ANIMATION = {
+  animation: false,
+  animationDuration: 0,
+  animationDurationUpdate: 0,
+} as const;
 
 function readGeoZoom(chart: ECharts): number {
   const opt = chart.getOption() as unknown;
@@ -112,8 +146,8 @@ if (echarts.getMap(WORLD_MAP_NAME) == null) {
   echarts.registerMap(WORLD_MAP_NAME, worldGeoJson as never);
 }
 
-export const ChartGrid = forwardRef<ChartGridRef, ChartGridProps>(
-  function ChartGrid({ runFile, theme, selectedColumnNames, scrollTargetKey }, ref) {
+export const ChartGrid = memo(forwardRef<ChartGridRef, ChartGridProps>(
+  function ChartGrid({ runFile, theme, selectedColumnNames, scrollTargetKey, highlightTime }, ref) {
   const chartRefs = useRef<ECharts[]>([]);
   const reactEChartsRefs = useRef<ReactEChartsRef[]>([]);
   const chartItemRefs = useRef<Record<string, HTMLDivElement | null>>({});
@@ -191,13 +225,7 @@ export const ChartGrid = forwardRef<ChartGridRef, ChartGridProps>(
     return v.toFixed(2);
   };
 
-  useImperativeHandle(ref, () => ({
-    getChartInstances() {
-      return reactEChartsRefs.current
-        .map((r) => r.getEchartsInstance())
-        .filter((inst): inst is ECharts => inst != null);
-    },
-  }));
+  const highlightColor = theme.colorPaletteRedForeground1;
 
   const [contextMenu, setContextMenu] = useState<{
     x: number;
@@ -264,11 +292,6 @@ export const ChartGrid = forwardRef<ChartGridRef, ChartGridProps>(
   }, [chartSelections, scrollTargetKey]);
 
   const timeCol = runFile.timeColumn();
-  if (!timeCol || chartSelections.length === 0) {
-    return (
-      <p className="chart-grid-empty">Select columns above to add charts.</p>
-    );
-  }
 
   // Reset collected instances when the set of charts changes
   const selectionChanged =
@@ -278,6 +301,22 @@ export const ChartGrid = forwardRef<ChartGridRef, ChartGridProps>(
     prevSelectionRef.current = [...selectedColumnNames];
     chartRefs.current = [];
     reactEChartsRefs.current = [];
+  }
+
+  const timeValues = timeCol ? runFile.getColumnValues(timeCol.name) as (number | null)[] : [];
+
+  useImperativeHandle(ref, () => ({
+    getChartInstances() {
+      return reactEChartsRefs.current
+        .map((r) => r.getEchartsInstance())
+        .filter((inst): inst is ECharts => inst != null);
+    },
+  }));
+
+  if (!timeCol || chartSelections.length === 0) {
+    return (
+      <p className="chart-grid-empty">Select columns above to add charts.</p>
+    );
   }
 
   const setReactEChartsRef = (el: ReactEChartsRef | null) => {
@@ -339,8 +378,6 @@ export const ChartGrid = forwardRef<ChartGridRef, ChartGridProps>(
       echarts.connect(chartRefs.current);
     }
   };
-
-  const timeValues = runFile.getColumnValues(timeCol.name) as (number | null)[];
 
   return (
     <div className="chart-grid" key={selectedColumnNames.join(",")}>
@@ -466,6 +503,20 @@ export const ChartGrid = forwardRef<ChartGridRef, ChartGridProps>(
                   z: 3,
                   itemStyle: { color: chartAccent, opacity: 1 },
                 },
+                {
+                  id: PLAYBACK_HIGHLIGHT_SERIES_ID,
+                  type: "scatter" as const,
+                  coordinateSystem: "geo" as const,
+                  ...PLAYBACK_HIGHLIGHT_ANIMATION,
+                  data: playbackHighlightData(highlightTime, points, (p) => p.value[2], (p) => [
+                    { value: [p.value[0], p.value[1]] },
+                  ]),
+                  symbolSize: 12,
+                  z: 4,
+                  itemStyle: { color: highlightColor, opacity: 1 },
+                  silent: true,
+                  tooltip: { show: false },
+                },
               ],
             };
           }
@@ -510,8 +561,11 @@ export const ChartGrid = forwardRef<ChartGridRef, ChartGridProps>(
             }
             const centerLat = pointCount > 0 ? latSum / pointCount : 0;
             const centerLong = pointCount > 0 ? longSum / pointCount : 0;
+            const globeHighlightAltBump = Math.max(GLOBE_PLAYBACK_HIGHLIGHT_ALT_BUMP_MIN, maxGlobeAlt * 0.04);
 
             return {
+              // Globe-only: echarts-gl scatter3D can morph points with ignorePreZ; keep chart + highlight updates non-animated.
+              animation: false,
               backgroundColor: theme.colorNeutralBackground2,
               tooltip: {
                 trigger: "item" as const,
@@ -571,6 +625,7 @@ export const ChartGrid = forwardRef<ChartGridRef, ChartGridProps>(
                 {
                   type: "scatter3D" as const,
                   coordinateSystem: "globe" as const,
+                  zlevel: -10,
                   symbolSize: 3,
                   label: { show: false },
                   emphasis: { label: { show: false } },
@@ -579,6 +634,27 @@ export const ChartGrid = forwardRef<ChartGridRef, ChartGridProps>(
                     opacity: 0.85,
                   },
                   data: globePoints,
+                },
+                {
+                  id: PLAYBACK_HIGHLIGHT_SERIES_ID,
+                  type: "scatter3D" as const,
+                  coordinateSystem: "globe" as const,
+                  ...PLAYBACK_HIGHLIGHT_ANIMATION,
+                  symbolSize: 10,
+                  label: { show: false },
+                  emphasis: { label: { show: false } },
+                  itemStyle: { color: highlightColor, opacity: 1 },
+                  silent: true,
+                  data: playbackHighlightData(
+                    highlightTime,
+                    globePoints,
+                    (p) => p.time,
+                    (p) => {
+                      const [lng, lat, h] = p.value;
+                      return [{ value: [lng, lat, h + globeHighlightAltBump] as [number, number, number] }];
+                    },
+                  ),
+                  zlevel: 10,
                 },
               ],
             };
@@ -687,6 +763,17 @@ export const ChartGrid = forwardRef<ChartGridRef, ChartGridProps>(
                     lineStyle: { width: 2.5, color: chartAccent, cap: "round", join: "round" },
                   },
                 },
+                {
+                  id: PLAYBACK_HIGHLIGHT_SERIES_ID,
+                  type: "scatter" as const,
+                  ...PLAYBACK_HIGHLIGHT_ANIMATION,
+                  data: playbackHighlightData(highlightTime, data, (d) => d.time, (d) => [{ value: d.value }]),
+                  symbolSize: 10,
+                  z: 4,
+                  itemStyle: { color: highlightColor, opacity: 1 },
+                  silent: true,
+                  tooltip: { show: false },
+                },
               ],
             };
           }
@@ -778,6 +865,17 @@ export const ChartGrid = forwardRef<ChartGridRef, ChartGridProps>(
                 emphasis: {
                   lineStyle: { width: 2.5, color: chartAccent, cap: "round", join: "round" },
                 },
+              },
+              {
+                id: PLAYBACK_HIGHLIGHT_SERIES_ID,
+                type: "scatter" as const,
+                ...PLAYBACK_HIGHLIGHT_ANIMATION,
+                data: playbackHighlightData(highlightTime, data, (d) => d[0], (row) => [row]),
+                symbolSize: 10,
+                z: 4,
+                itemStyle: { color: highlightColor, opacity: 1 },
+                silent: true,
+                tooltip: { show: false },
               },
             ],
           };
@@ -980,4 +1078,4 @@ export const ChartGrid = forwardRef<ChartGridRef, ChartGridProps>(
       })}
     </div>
   );
-});
+}));

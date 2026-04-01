@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import type { RunFile } from "./RunFile";
@@ -6,6 +6,7 @@ import type { Theme } from "@fluentui/react-theme";
 import { ColumnSelectDialog } from "./ColumnSelectDialog";
 import { ChartGrid, type ChartGridRef } from "./ChartGrid";
 import { ExportChartsDialog } from "./ExportChartsDialog";
+import { PlaybackBar } from "./PlaybackBar";
 import {
   LAT_LONG_LINE_LABEL,
   LAT_LONG_LINE_SELECTION,
@@ -42,6 +43,128 @@ export function LoadedFileView({
   const chartGridRef = useRef<ChartGridRef>(null);
   const [columnDialogOpen, setColumnDialogOpen] = useState(false);
   const [scrollTargetKey, setScrollTargetKey] = useState<string | null>(null);
+
+  const timeCol = useMemo(() => runFile.timeColumn(), [runFile]);
+  const timeMin = timeCol?.min ?? 0;
+  const timeMax = timeCol?.max ?? 0;
+  const [currentTime, setCurrentTime] = useState(timeMin);
+  const [isPlaying, setIsPlaying] = useState(false);
+  const [playbackSpeed, setPlaybackSpeed] = useState(1);
+  const [isLooping, setIsLooping] = useState(false);
+  /** When false, charts omit the scrub highlight (exports match). Enter by Play, scrub, etc.; Stop exits. */
+  const [playbackActive, setPlaybackActive] = useState(false);
+
+  const playStateRef = useRef({ isPlaying, playbackSpeed, isLooping, timeMin, timeMax });
+  playStateRef.current = { isPlaying, playbackSpeed, isLooping, timeMin, timeMax };
+
+  const currentTimeRef = useRef(currentTime);
+  currentTimeRef.current = currentTime;
+
+  const rafRef = useRef<number>(0);
+  const lastFrameRef = useRef<number>(0);
+  const lastStateUpdateRef = useRef<number>(0);
+  const STATE_UPDATE_INTERVAL_MS = 50;
+
+  useEffect(() => {
+    if (!isPlaying) {
+      if (rafRef.current) cancelAnimationFrame(rafRef.current);
+      rafRef.current = 0;
+      setCurrentTime(currentTimeRef.current);
+      return;
+    }
+    lastFrameRef.current = 0;
+    lastStateUpdateRef.current = 0;
+    const tick = (now: number) => {
+      const st = playStateRef.current;
+      if (!st.isPlaying) return;
+      if (lastFrameRef.current > 0) {
+        const deltaMs = Math.min(now - lastFrameRef.current, 100);
+        const advance = (deltaMs / 1000) * st.playbackSpeed;
+        let next = currentTimeRef.current + advance;
+        if (next >= st.timeMax) {
+          if (st.isLooping) {
+            next = st.timeMin + (next - st.timeMax) % (st.timeMax - st.timeMin || 1);
+          } else {
+            next = st.timeMax;
+            setIsPlaying(false);
+          }
+        }
+        currentTimeRef.current = next;
+        if (now - lastStateUpdateRef.current >= STATE_UPDATE_INTERVAL_MS) {
+          setCurrentTime(next);
+          lastStateUpdateRef.current = now;
+        }
+      }
+      lastFrameRef.current = now;
+      rafRef.current = requestAnimationFrame(tick);
+    };
+    rafRef.current = requestAnimationFrame(tick);
+    return () => {
+      if (rafRef.current) cancelAnimationFrame(rafRef.current);
+    };
+  }, [isPlaying]);
+
+  useEffect(() => {
+    setCurrentTime(timeMin);
+    setIsPlaying(false);
+    setPlaybackActive(false);
+  }, [runFile, timeMin]);
+
+  const exitPlaybackMode = useCallback(() => {
+    currentTimeRef.current = timeMin;
+    setPlaybackActive(false);
+    setIsPlaying(false);
+    setIsLooping(false);
+    setCurrentTime(timeMin);
+  }, [timeMin]);
+
+  const togglePlay = useCallback(() => {
+    setPlaybackActive(true);
+    setCurrentTime((t) => {
+      if (t >= timeMax) return timeMin;
+      return t;
+    });
+    setIsPlaying((p) => !p);
+  }, [timeMin, timeMax]);
+  const resetPlayback = useCallback(() => {
+    setPlaybackActive(true);
+    setIsPlaying(false);
+    setCurrentTime(timeMin);
+  }, [timeMin]);
+  const toggleLoop = useCallback(() => {
+    setPlaybackActive(true);
+    setIsLooping((prev) => {
+      if (!prev) setIsPlaying(true);
+      return !prev;
+    });
+  }, []);
+  const handleScrub = useCallback(
+    (time: number) => {
+      setPlaybackActive(true);
+      setIsPlaying(false);
+      setCurrentTime(time);
+    },
+    [],
+  );
+
+  const hasPlaybackBar = timeCol != null && selectedColumns.length > 0;
+  useEffect(() => {
+    if (!hasPlaybackBar) return;
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key !== " ") return;
+      if (e.repeat) return;
+      const el = e.target;
+      if (!(el instanceof HTMLElement)) return;
+      if (el.closest("input, textarea, select, [contenteditable='true']")) return;
+      if (el.closest('[role="dialog"]') || el.closest(".app-dialog-surface")) return;
+      if (el.closest('[role="listbox"], [role="menu"], [role="menuitem"], [role="option"]')) return;
+      e.preventDefault();
+      togglePlay();
+    };
+    window.addEventListener("keydown", onKeyDown, true);
+    return () => window.removeEventListener("keydown", onKeyDown, true);
+  }, [hasPlaybackBar, togglePlay]);
+
   const chartNames = selectedColumns.flatMap((name) => {
     if (isMapTraceSelection(name)) return locationColumns != null ? [MAP_TRACE_LABEL] : [];
     if (isLatLongLineSelection(name)) return locationColumns != null ? [LAT_LONG_LINE_LABEL] : [];
@@ -135,6 +258,8 @@ export function LoadedFileView({
     };
   }, [dataColumns, locationColumns, globeColumns, onSelectionChange]);
 
+  const hasCharts = selectedColumns.length > 0;
+
   return (
     <>
       <div className="chart-grid-scroll">
@@ -144,8 +269,26 @@ export function LoadedFileView({
           theme={theme}
           selectedColumnNames={selectedColumns}
           scrollTargetKey={scrollTargetKey}
+          highlightTime={playbackActive ? currentTime : null}
         />
       </div>
+      {hasCharts && timeCol != null && (
+        <PlaybackBar
+          timeMin={timeMin}
+          timeMax={timeMax}
+          currentTime={currentTime}
+          playbackActive={playbackActive}
+          isPlaying={isPlaying}
+          speed={playbackSpeed}
+          isLooping={isLooping}
+          onTimeChange={handleScrub}
+          onPlayPause={togglePlay}
+          onReset={resetPlayback}
+          onExitPlayback={exitPlaybackMode}
+          onSpeedChange={setPlaybackSpeed}
+          onLoopToggle={toggleLoop}
+        />
+      )}
       {columnDialogOpen && (
         <ColumnSelectDialog
           open

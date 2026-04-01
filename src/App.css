@@ -44,7 +44,8 @@ body {
 .chart-grid-item,
 .chart-context-menu-overlay,
 .chart-context-menu,
-.app-dialog-surface {
+.app-dialog-surface,
+.playback-bar {
   user-select: none;
   -webkit-user-select: none;
 }
