@@ -67,7 +67,13 @@ const MAP_TRACE_LINE_SERIES_ID = "map-trace-line";
 const LINE_CHART_MIN_HEIGHT = 200;
 const MAP_CHART_MIN_HEIGHT = 320;
 const GLOBE_RADIUS = 100;
-const EARTH_RADIUS_M = 6_371_000;
+/**
+ * Mean Earth radius for globe radial scaling, aligned with RASOrbit exports:
+ * average of equatorial and polar radii in feet, then ft→m using the same
+ * factor as `distanceToMeters` for `ft` in {@link ./converters}.
+ */
+const EARTH_MEAN_RADIUS_FT_RASORBIT = 20890663;
+const EARTH_RADIUS_M = EARTH_MEAN_RADIUS_FT_RASORBIT * 0.3048;
 
 function findNearestByTime<T>(data: T[], getTime: (item: T) => number | null | undefined, target: number): T | undefined {
   let best: T | undefined;
