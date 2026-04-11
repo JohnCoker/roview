@@ -1,4 +1,14 @@
-import { forwardRef, memo, useImperativeHandle, useRef, useState, useEffect } from "react";
+import {
+  forwardRef,
+  memo,
+  useImperativeHandle,
+  useRef,
+  useState,
+  useEffect,
+  useMemo,
+  useLayoutEffect,
+  type RefObject,
+} from "react";
 import ReactEChartsCore from "echarts-for-react/lib/core";
 import * as echarts from "echarts";
 import type { ECharts } from "echarts";
@@ -52,6 +62,8 @@ type ChartSelection = LineChartSelection | MapChartSelection | LatLongLineChartS
 
 const WORLD_MAP_NAME = "roview-world";
 const PLAYBACK_HIGHLIGHT_SERIES_ID = "playback-highlight";
+/** Geo `lines` polyline (stable paint); dense `scatter` “lines” glitch on hover in ECharts 5 + geo. */
+const MAP_TRACE_LINE_SERIES_ID = "map-trace-line";
 const LINE_CHART_MIN_HEIGHT = 200;
 const MAP_CHART_MIN_HEIGHT = 320;
 const GLOBE_RADIUS = 100;
@@ -87,6 +99,181 @@ function normalizeLongitudeDegrees(longitude: number): number {
   return normalized;
 }
 
+/**
+ * Split the ground track into contiguous polylines in normalized lon (−180…180).
+ * When |Δlon| > 180° between successive samples, ECharts would draw a chord across the map;
+ * starting a new segment keeps coordinates inside geo’s range so the full trace stays visible.
+ * `pointChunkIndex[i]` is the `lines` `data` index for sample `i` (for `showTip` / tooltips).
+ */
+function splitMapTracePolylineOnLongitudeWrap(points: MapTracePoint[]): {
+  chunks: { coords: [number, number][]; times: (number | null)[]; rawLongs: number[] }[];
+  pointChunkIndex: number[];
+} {
+  if (points.length === 0) return { chunks: [], pointChunkIndex: [] };
+
+  const pointChunkIndex: number[] = new Array(points.length);
+  const chunks: { coords: [number, number][]; times: (number | null)[]; rawLongs: number[] }[] = [];
+  let coords: [number, number][] = [[points[0].value[0], points[0].value[1]]];
+  let times: (number | null)[] = [points[0].time];
+  let rawLongs: number[] = [points[0].rawLong];
+  let chunkId = 0;
+  pointChunkIndex[0] = 0;
+
+  for (let i = 1; i < points.length; i++) {
+    const pt = points[i];
+    const lon = pt.value[0];
+    const lat = pt.value[1];
+    const prevLon = coords[coords.length - 1][0];
+
+    if (Math.abs(lon - prevLon) > 180) {
+      chunks.push({ coords, times, rawLongs });
+      chunkId++;
+      coords = [[lon, lat]];
+      times = [pt.time];
+      rawLongs = [pt.rawLong];
+    } else {
+      coords.push([lon, lat]);
+      times.push(pt.time);
+      rawLongs.push(pt.rawLong);
+    }
+    pointChunkIndex[i] = chunkId;
+  }
+  chunks.push({ coords, times, rawLongs });
+
+  for (const ch of chunks) {
+    if (ch.coords.length === 1) {
+      ch.coords.push([ch.coords[0][0], ch.coords[0][1]]);
+    }
+  }
+  return { chunks, pointChunkIndex };
+}
+
+function formatMapTraceTooltipHtml(
+  pt: MapTracePoint,
+  timeCol: Col,
+  latKind: string,
+  latUnit: string,
+  longKind: string,
+  longUnit: string,
+): string {
+  const time = pt.time;
+  const lat = pt.value[1];
+  const rawLong = pt.rawLong;
+  const timeLabel = `${timeCol.kind()}: ${formatVal(time)}${timeCol.unit() ? ` ${timeCol.unit()}` : ""}`;
+  const latLabel = `${latKind}: ${formatVal(lat)}${latUnit ? ` ${latUnit}` : ""}`;
+  const longLabel = `${longKind}: ${formatVal(rawLong)}${longUnit ? ` ${longUnit}` : ""}`;
+  return `${timeLabel}<br/>${latLabel}<br/>${longLabel}`;
+}
+
+type MapTraceBuiltBundle = {
+  option: Record<string, unknown>;
+  points: MapTracePoint[];
+  pointChunkIndex: number[];
+};
+
+/**
+ * ECharts 5 geo `lines` + `polyline` does not expose which vertex is hovered, so the stock
+ * tooltip formatter cannot show the right row. We pick the nearest data sample in lon/lat
+ * and refresh the tooltip — small, localized glue (not general chart magic).
+ * Programmatic `showTip` + `dataIndex` would snap the tooltip to the polyline; `tooltip.position`
+ * reads the latest ZRender pointer so the box stays with the cursor.
+ */
+function attachMapTraceTooltipInteraction(
+  chart: ECharts,
+  builtRef: RefObject<MapTraceBuiltBundle | null>,
+  sampleRef: RefObject<MapTracePoint | null>,
+  mouseRef: RefObject<{ x: number; y: number }>,
+): void {
+  const zr = chart.getZr();
+  let tipRaf = 0;
+  let pendingDataIndex: number | null = null;
+  const flushShowTip = () => {
+    tipRaf = 0;
+    if (pendingDataIndex == null) return;
+    const dataIndex = pendingDataIndex;
+    pendingDataIndex = null;
+    chart.dispatchAction({
+      type: "showTip",
+      seriesIndex: 0,
+      dataIndex,
+    } as never);
+  };
+  const scheduleShowTip = (dataIndex: number) => {
+    pendingDataIndex = dataIndex;
+    if (tipRaf !== 0) return;
+    tipRaf = requestAnimationFrame(flushShowTip);
+  };
+  const onMove = (ev: { offsetX: number; offsetY: number }) => {
+    const m = mouseRef.current;
+    m.x = ev.offsetX;
+    m.y = ev.offsetY;
+    const built = builtRef.current;
+    if (built == null) return;
+    const { points: pts, pointChunkIndex: pci } = built;
+    if (pts.length === 0 || pci.length !== pts.length) return;
+    let geo: number[] | null = null;
+    try {
+      let r = chart.convertFromPixel({ geoIndex: 0 }, [ev.offsetX, ev.offsetY]);
+      if (!Array.isArray(r) || r.length < 2) {
+        r = chart.convertFromPixel({ seriesIndex: 0 }, [ev.offsetX, ev.offsetY]);
+      }
+      geo = Array.isArray(r) ? (r as number[]) : null;
+    } catch {
+      try {
+        const r = chart.convertFromPixel({ seriesIndex: 0 }, [ev.offsetX, ev.offsetY]);
+        geo = Array.isArray(r) ? (r as number[]) : null;
+      } catch {
+        return;
+      }
+    }
+    if (!geo || geo.length < 2) return;
+    const gx = geo[0];
+    const gy = geo[1];
+    let bestI = 0;
+    let bestD = Infinity;
+    for (let i = 0; i < pts.length; i++) {
+      const dx = pts[i].value[0] - gx;
+      const dy = pts[i].value[1] - gy;
+      const d = dx * dx + dy * dy;
+      if (d < bestD) {
+        bestD = d;
+        bestI = i;
+      }
+    }
+    if (Math.sqrt(bestD) > 5) {
+      sampleRef.current = null;
+      pendingDataIndex = null;
+      if (tipRaf !== 0) {
+        cancelAnimationFrame(tipRaf);
+        tipRaf = 0;
+      }
+      chart.dispatchAction({ type: "hideTip" });
+      return;
+    }
+    sampleRef.current = pts[bestI];
+    scheduleShowTip(pci[bestI]);
+  };
+  const onGlobalOut = () => {
+    sampleRef.current = null;
+    pendingDataIndex = null;
+    if (tipRaf !== 0) {
+      cancelAnimationFrame(tipRaf);
+      tipRaf = 0;
+    }
+    chart.dispatchAction({ type: "hideTip" });
+  };
+  zr.on("mousemove", onMove);
+  zr.on("globalout", onGlobalOut);
+  chart.on("disposed", () => {
+    zr.off("mousemove", onMove);
+    zr.off("globalout", onGlobalOut);
+    if (tipRaf !== 0) {
+      cancelAnimationFrame(tipRaf);
+      tipRaf = 0;
+    }
+  });
+}
+
 const MAP_ZOOM_MIN = 1;
 const MAP_ZOOM_MAX = 20;
 const GLOBE_DIST_DEFAULT = 200;
@@ -101,6 +288,160 @@ const PLAYBACK_HIGHLIGHT_ANIMATION = {
   animationDuration: 0,
   animationDurationUpdate: 0,
 } as const;
+
+type MapTracePoint = { value: [number, number]; time: number | null; rawLong: number };
+
+function buildMapTraceScatterPoints(
+  runFile: RunFile,
+  timeValues: (number | null)[],
+): MapTracePoint[] | null {
+  const locationColumns = runFile.locationColumns();
+  if (locationColumns == null) return null;
+  const latValues = runFile.getColumnValues(locationColumns.lat.name);
+  const longValues = runFile.getColumnValues(locationColumns.long.name);
+  const points: MapTracePoint[] = [];
+  for (let i = 0; i < latValues.length; i++) {
+    const lat = latValues[i];
+    const long = longValues[i];
+    const time = timeValues[i];
+    if (lat == null || long == null) continue;
+    points.push({
+      value: [normalizeLongitudeDegrees(long), lat],
+      time,
+      rawLong: long,
+    });
+  }
+  return points;
+}
+
+/** Base map option only: React/`echarts-for-react` should not merge full option on every `highlightTime` tick (geo+canvas repaint bugs). */
+function buildMapTraceBaseEchartsOption(params: {
+  chunks: { coords: [number, number][]; times: (number | null)[]; rawLongs: number[] }[];
+  mapTooltipFormatter: (tooltipParams: unknown) => string;
+  mapZoom: number;
+  theme: Theme;
+  highlightColor: string;
+  chartFontFamily: string;
+  chartText: string;
+  chartAxis: string;
+  lineSeriesLineStyle: { width: number; color: string; cap: "round"; join: "round" };
+  mapTooltipMouseRef: RefObject<{ x: number; y: number }>;
+  tooltipBg: string;
+  tooltipBorder: string;
+  mapFill: string;
+  mapHighlight: string;
+}): Record<string, unknown> {
+  const {
+    chunks,
+    mapTooltipFormatter,
+    mapZoom,
+    chartFontFamily,
+    chartText,
+    chartAxis,
+    lineSeriesLineStyle,
+    mapTooltipMouseRef,
+    tooltipBg,
+    tooltipBorder,
+    mapFill,
+    mapHighlight,
+    highlightColor,
+  } = params;
+
+  return {
+    animation: false,
+    textStyle: {
+      fontFamily: chartFontFamily,
+      fontWeight: params.theme.fontWeightSemibold,
+      color: chartText,
+    },
+    tooltip: {
+      trigger: "item" as const,
+      transitionDuration: 0,
+      confine: true,
+      backgroundColor: tooltipBg,
+      borderColor: tooltipBorder,
+      borderWidth: 1,
+      padding: 8,
+      textStyle: {
+        fontFamily: chartFontFamily,
+        fontWeight: params.theme.fontWeightSemibold,
+        color: chartText,
+      },
+      formatter: mapTooltipFormatter,
+      /** `showTip` + `dataIndex` would snap the box to the polyline; keep it under the cursor instead. */
+      position: (
+        _point: number[],
+        _tooltipParams?: unknown,
+        _dom?: unknown,
+        _rect?: unknown,
+        size?: { viewSize?: [number, number]; contentSize?: [number, number] },
+      ) => {
+        const { x, y } = mapTooltipMouseRef.current;
+        const padX = 14;
+        const padY = 14;
+        const vw = size?.viewSize?.[0];
+        const vh = size?.viewSize?.[1];
+        const cw = size?.contentSize?.[0];
+        const ch = size?.contentSize?.[1];
+        let px = x + padX;
+        let py = y + padY;
+        if (vw != null && cw != null && px + cw > vw) px = Math.max(0, x - cw - padX);
+        if (vh != null && ch != null && py + ch > vh) py = Math.max(0, y - ch - padY);
+        return [px, py] as [number, number];
+      },
+    },
+    geo: {
+      map: WORLD_MAP_NAME,
+      left: 8,
+      right: 8,
+      top: 8,
+      bottom: 8,
+      roam: "move",
+      zoom: mapZoom,
+      scaleLimit: { min: MAP_ZOOM_MIN, max: MAP_ZOOM_MAX },
+      itemStyle: { areaColor: mapFill, borderColor: chartAxis },
+      emphasis: { itemStyle: { areaColor: mapHighlight } },
+    },
+    series: [
+      ...((): Record<string, unknown>[] => {
+        if (chunks.length === 0) return [];
+        return [
+          {
+            id: MAP_TRACE_LINE_SERIES_ID,
+            type: "lines" as const,
+            coordinateSystem: "geo" as const,
+            polyline: true,
+            z: 3,
+            silent: false,
+            lineStyle: { ...lineSeriesLineStyle, opacity: 1 },
+            emphasis: {
+              lineStyle: { ...lineSeriesLineStyle, opacity: 1 },
+            },
+            animation: false,
+            animationDurationUpdate: 0,
+            data: chunks.map((ch) => ({
+              coords: ch.coords,
+              times: ch.times,
+              rawLongs: ch.rawLongs,
+            })),
+          },
+        ];
+      })(),
+      {
+        id: PLAYBACK_HIGHLIGHT_SERIES_ID,
+        type: "scatter" as const,
+        coordinateSystem: "geo" as const,
+        ...PLAYBACK_HIGHLIGHT_ANIMATION,
+        data: [] as unknown[],
+        symbolSize: 12,
+        z: 4,
+        itemStyle: { color: highlightColor, opacity: 1 },
+        silent: true,
+        tooltip: { show: false },
+      },
+    ],
+  };
+}
 
 function readGeoZoom(chart: ECharts): number {
   const opt = chart.getOption() as unknown;
@@ -159,6 +500,13 @@ export const ChartGrid = memo(forwardRef<ChartGridRef, ChartGridProps>(
   const chartAxis = theme.colorNeutralStrokeAccessible ?? theme.colorNeutralStroke1;
   const chartGridLine = theme.colorNeutralStroke2;
   const chartAccent = theme.colorBrandForeground1 ?? theme.colorBrandStroke1 ?? chartText;
+  /** Same Fluent stroke for Cartesian `line` series and Map Trace `lines` (width / caps match). */
+  const cartesianLineSeriesLineStyle = {
+    width: 2.5,
+    color: chartAccent,
+    cap: "round" as const,
+    join: "round" as const,
+  };
   /** Axis line + tick stroke ~1.25px in chart space. */
   const chartAxisStrokePx = 1.25;
   /** Cartesian charts: balanced grid + ~one-letter tick–axis gap; H/V name gaps aligned. */
@@ -305,6 +653,104 @@ export const ChartGrid = memo(forwardRef<ChartGridRef, ChartGridProps>(
 
   const timeValues = timeCol ? runFile.getColumnValues(timeCol.name) as (number | null)[] : [];
 
+  const mapTraceSelected = selectedColumnNames.includes(MAP_TRACE_SELECTION);
+  const mapTraceZoom = mapGeoZoom[MAP_TRACE_SELECTION] ?? 1;
+
+  /** Nearest ground-track sample for Map Trace tooltip (ECharts `lines` polyline item params lack a reliable vertex index). */
+  const mapTraceTooltipSampleRef = useRef<MapTracePoint | null>(null);
+  /** Pointer in ZRender space; drives `tooltip.position` so the box tracks the cursor instead of the polyline vertex. */
+  const mapTraceTooltipMouseRef = useRef({ x: 0, y: 0 });
+
+  const mapTraceBuilt = useMemo(() => {
+    if (!mapTraceSelected || timeCol == null) return null;
+    const points = buildMapTraceScatterPoints(runFile, timeValues);
+    if (points == null) return null;
+    const lc = runFile.locationColumns();
+    if (lc == null) return null;
+    const latKind = lc.lat.kind();
+    const latUnit = lc.lat.unit() ?? "";
+    const longKind = lc.long.kind();
+    const longUnit = lc.long.unit() ?? "";
+    const { chunks, pointChunkIndex } = splitMapTracePolylineOnLongitudeWrap(points);
+    if (chunks.length === 0) return null;
+
+    const mapTooltipFormatter = (tooltipParams: unknown) => {
+      const p = tooltipParams as { seriesType?: string };
+      if (p.seriesType !== "lines") return "";
+      const pt = mapTraceTooltipSampleRef.current;
+      if (!pt) return "";
+      return formatMapTraceTooltipHtml(pt, timeCol, latKind, latUnit, longKind, longUnit);
+    };
+
+    const mapFill = theme.colorNeutralBackground3 ?? theme.colorNeutralBackground2;
+    const mapHighlight = theme.colorNeutralBackground4 ?? mapFill;
+    const option = buildMapTraceBaseEchartsOption({
+      chunks,
+      mapTooltipFormatter,
+      mapZoom: mapTraceZoom,
+      theme,
+      highlightColor,
+      chartFontFamily: theme.fontFamilyBase,
+      chartText: theme.colorNeutralForeground1,
+      chartAxis: theme.colorNeutralStrokeAccessible ?? theme.colorNeutralStroke1,
+      lineSeriesLineStyle: cartesianLineSeriesLineStyle,
+      mapTooltipMouseRef: mapTraceTooltipMouseRef,
+      tooltipBg: theme.colorNeutralBackground1,
+      tooltipBorder: theme.colorNeutralStroke1,
+      mapFill,
+      mapHighlight,
+    });
+    return { option, points, pointChunkIndex };
+  }, [mapTraceSelected, timeCol, runFile, timeValues, mapTraceZoom, theme, highlightColor]);
+
+  const mapTraceBuiltRef = useRef<MapTraceBuiltBundle | null>(null);
+  mapTraceBuiltRef.current = mapTraceBuilt;
+  const highlightTimeRef = useRef(highlightTime);
+  highlightTimeRef.current = highlightTime;
+  const highlightColorRef = useRef(highlightColor);
+  highlightColorRef.current = highlightColor;
+
+  const syncMapPlaybackHighlight = () => {
+    const built = mapTraceBuiltRef.current;
+    if (built == null) return;
+    const chart = mapChartByKeyRef.current.get(MAP_TRACE_SELECTION);
+    if (chart == null) return;
+    const data = playbackHighlightData(
+      highlightTimeRef.current,
+      built.points,
+      (p) => p.time,
+      (p) => [{ value: [p.value[0], p.value[1]] }],
+    );
+    chart.setOption(
+      {
+        series: [
+          {
+            id: PLAYBACK_HIGHLIGHT_SERIES_ID,
+            type: "scatter" as const,
+            coordinateSystem: "geo" as const,
+            ...PLAYBACK_HIGHLIGHT_ANIMATION,
+            data,
+            symbolSize: 12,
+            z: 4,
+            itemStyle: { color: highlightColorRef.current, opacity: 1 },
+            silent: true,
+            tooltip: { show: false },
+          },
+        ],
+      },
+      { silent: true },
+    );
+  };
+
+  useLayoutEffect(() => {
+    if (!mapTraceSelected) return;
+    syncMapPlaybackHighlight();
+  }, [mapTraceSelected, highlightTime, highlightColor, mapTraceBuilt]);
+
+  useEffect(() => {
+    if (!mapTraceSelected) mapTraceTooltipSampleRef.current = null;
+  }, [mapTraceSelected]);
+
   useImperativeHandle(ref, () => ({
     getChartInstances() {
       return reactEChartsRefs.current
@@ -367,6 +813,10 @@ export const ChartGrid = memo(forwardRef<ChartGridRef, ChartGridProps>(
     if (kind === "map") {
       mapChartByKeyRef.current.set(selectionKey, chart);
       setMapGeoZoom((prev) => ({ ...prev, [selectionKey]: readGeoZoom(chart) }));
+      attachMapTraceTooltipInteraction(chart, mapTraceBuiltRef, mapTraceTooltipSampleRef, mapTraceTooltipMouseRef);
+      queueMicrotask(() => {
+        syncMapPlaybackHighlight();
+      });
     }
     if (kind === "globe") {
       mapChartByKeyRef.current.set(selectionKey, chart);
@@ -428,97 +878,7 @@ export const ChartGrid = memo(forwardRef<ChartGridRef, ChartGridProps>(
         const mapZoom = isMapChart ? (mapGeoZoom[selection.key] ?? 1) : 1;
         const option = (() => {
           if (selection.kind === "map") {
-            const locationColumns = runFile.locationColumns();
-            if (locationColumns == null) return null;
-            const latValues = runFile.getColumnValues(locationColumns.lat.name);
-            const longValues = runFile.getColumnValues(locationColumns.long.name);
-            const latKind = locationColumns.lat.kind();
-            const latUnit = locationColumns.lat.unit();
-            const longKind = locationColumns.long.kind();
-            const longUnit = locationColumns.long.unit();
-            const points = latValues
-              .map((lat, i) => {
-                const long = longValues[i];
-                const time = timeValues[i];
-                if (lat == null || long == null) return null;
-                return { value: [normalizeLongitudeDegrees(long), lat, time], rawLong: long };
-              })
-              .filter((point): point is { value: [number, number, number | null]; rawLong: number } => point != null);
-            const mapFill = theme.colorNeutralBackground3 ?? theme.colorNeutralBackground2;
-            const mapHighlight = theme.colorNeutralBackground4 ?? mapFill;
-
-            return {
-              textStyle: {
-                fontFamily: chartFontFamily,
-                fontWeight: theme.fontWeightSemibold,
-                color: chartText,
-              },
-              tooltip: {
-                trigger: "item" as const,
-                backgroundColor: tooltipBg,
-                borderColor: tooltipBorder,
-                borderWidth: 1,
-                padding: 8,
-                textStyle: {
-                  fontFamily: chartFontFamily,
-                  fontWeight: theme.fontWeightSemibold,
-                  color: chartText,
-                },
-                formatter: (params: any) => {
-                  const value = Array.isArray(params?.value) ? params.value : [];
-                  const rawLong = (params?.data?.rawLong ?? value[0]) as number | null | undefined;
-                  const lat = value[1] as number | null | undefined;
-                  const time = value[2] as number | null | undefined;
-
-                  const timeLabel = `${timeCol.kind()}: ${formatVal(time)}${
-                    timeCol.unit() ? ` ${timeCol.unit()}` : ""
-                  }`;
-                  const latLabel = `${latKind}: ${formatVal(lat)}${
-                    latUnit ? ` ${latUnit}` : ""
-                  }`;
-                  const longLabel = `${longKind}: ${formatVal(rawLong)}${
-                    longUnit ? ` ${longUnit}` : ""
-                  }`;
-                  return `${timeLabel}<br/>${latLabel}<br/>${longLabel}`;
-                },
-              },
-              geo: {
-                map: WORLD_MAP_NAME,
-                left: 8,
-                right: 8,
-                top: 8,
-                bottom: 8,
-                roam: "move",
-                zoom: mapZoom,
-                scaleLimit: { min: MAP_ZOOM_MIN, max: MAP_ZOOM_MAX },
-                itemStyle: { areaColor: mapFill, borderColor: chartAxis },
-                emphasis: { itemStyle: { areaColor: mapHighlight } },
-              },
-              series: [
-                {
-                  type: "scatter" as const,
-                  coordinateSystem: "geo" as const,
-                  data: points,
-                  symbolSize: 4,
-                  z: 3,
-                  itemStyle: { color: chartAccent, opacity: 1 },
-                },
-                {
-                  id: PLAYBACK_HIGHLIGHT_SERIES_ID,
-                  type: "scatter" as const,
-                  coordinateSystem: "geo" as const,
-                  ...PLAYBACK_HIGHLIGHT_ANIMATION,
-                  data: playbackHighlightData(highlightTime, points, (p) => p.value[2], (p) => [
-                    { value: [p.value[0], p.value[1]] },
-                  ]),
-                  symbolSize: 12,
-                  z: 4,
-                  itemStyle: { color: highlightColor, opacity: 1 },
-                  silent: true,
-                  tooltip: { show: false },
-                },
-              ],
-            };
+            return mapTraceBuilt != null ? (mapTraceBuilt.option as object) : null;
           }
           if (selection.kind === "globe") {
             const globeCols = runFile.globeColumns();
@@ -758,9 +1118,9 @@ export const ChartGrid = memo(forwardRef<ChartGridRef, ChartGridProps>(
                   data,
                   symbol: "none" as const,
                   connectNulls: false,
-                  lineStyle: { width: 2.5, color: chartAccent, cap: "round", join: "round" },
+                  lineStyle: cartesianLineSeriesLineStyle,
                   emphasis: {
-                    lineStyle: { width: 2.5, color: chartAccent, cap: "round", join: "round" },
+                    lineStyle: cartesianLineSeriesLineStyle,
                   },
                 },
                 {
@@ -861,9 +1221,9 @@ export const ChartGrid = memo(forwardRef<ChartGridRef, ChartGridProps>(
                 data,
                 symbol: "none" as const,
                 connectNulls: false,
-                lineStyle: { width: 2.5, color: chartAccent, cap: "round", join: "round" },
+                lineStyle: cartesianLineSeriesLineStyle,
                 emphasis: {
-                  lineStyle: { width: 2.5, color: chartAccent, cap: "round", join: "round" },
+                  lineStyle: cartesianLineSeriesLineStyle,
                 },
               },
               {
