@@ -217,7 +217,11 @@ export function LoadedFileView({
           onSelectionChange(next);
         }),
         listen("view-all-columns", () => {
-          const next = dataColumns.map((c) => c.name);
+          const base = dataColumns.map((c) => c.name);
+          const next =
+            locationColumns != null && !base.includes(LAT_LONG_LINE_SELECTION)
+              ? [...base, LAT_LONG_LINE_SELECTION]
+              : base;
           onSelectionChange(next);
         }),
         listen("view-select-columns", () => {

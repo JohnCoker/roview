@@ -35,7 +35,7 @@ export interface PlaybackBarProps {
   onLoopToggle: () => void;
 }
 
-const SPEED_OPTIONS = [1, 5, 10, 100];
+const SPEED_OPTIONS = [1, 5, 10, 100, 500, 1000];
 
 function formatElapsed(seconds: number): string {
   const totalSec = Math.max(0, Math.floor(seconds));

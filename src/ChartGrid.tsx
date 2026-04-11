@@ -163,8 +163,8 @@ export const ChartGrid = memo(forwardRef<ChartGridRef, ChartGridProps>(
   const chartAxisStrokePx = 1.25;
   /** Cartesian charts: balanced grid + ~one-letter tick–axis gap; H/V name gaps aligned. */
   /** Extra room for labels when margin increases (containLabel: false keeps multi-chart alignment). */
-  const cartesianGrid = { left: 76, right: 12, top: 10, bottom: 40, containLabel: false } as const;
-  const cartesianXAxisNameGap = 26;
+  const cartesianGrid = { left: 76, right: 12, top: 10, bottom: 48, containLabel: false } as const;
+  const cartesianXAxisNameGap = 34;
   const cartesianYAxisNameGap = 52;
   /** ~1 letter / “space” between tick marks and scale numbers (reviewer). */
   const cartesianAxisLabelMargin = 11;
@@ -906,6 +906,14 @@ export const ChartGrid = memo(forwardRef<ChartGridRef, ChartGridProps>(
               borderRadius: theme.borderRadiusMedium,
               ...(isSpatialChart ? { position: "relative" } : undefined),
               ...(isGlobeChart ? { backgroundColor: theme.colorNeutralBackground2 } : undefined),
+              ...(!isSpatialChart
+                ? {
+                    paddingTop: "0.5em",
+                    paddingRight: "0.5em",
+                    paddingBottom: "1em",
+                    paddingLeft: 0,
+                  }
+                : undefined),
             }}
           >
             <ChartErrorBoundary chartLabel={selection.label} theme={theme}>
