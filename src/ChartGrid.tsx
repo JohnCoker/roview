@@ -519,7 +519,7 @@ export const ChartGrid = memo(forwardRef<ChartGridRef, ChartGridProps>(
   /** Extra room for labels when margin increases (containLabel: false keeps multi-chart alignment). */
   const cartesianGrid = { left: 76, right: 12, top: 10, bottom: 48, containLabel: false } as const;
   const cartesianXAxisNameGap = 34;
-  const cartesianYAxisNameGap = 52;
+  const cartesianYAxisNameGap = 62;
   /** ~1 letter / “space” between tick marks and scale numbers (reviewer). */
   const cartesianAxisLabelMargin = 11;
   const cartesianAxisLine = { lineStyle: { color: chartAxis, width: chartAxisStrokePx } };
@@ -571,12 +571,32 @@ export const ChartGrid = memo(forwardRef<ChartGridRef, ChartGridProps>(
   const formatAxisTick = (v: unknown) => {
     if (typeof v !== "number" || !Number.isFinite(v)) return "";
     const abs = Math.abs(v);
+    if (abs === 0) return "0";
+    const toFixedHalfUp = (n: number, digits: number) => {
+      // Bias away from binary-float ties so `.5` cases round "half up" more predictably.
+      // We keep this local (axis ticks only) to avoid changing general numeric formatting.
+      let neg = false;
+      let x = n;
+      if (x < 0) {
+        neg = true;
+        x = Math.abs(x);
+      }
+      x += 1 / Math.pow(10, digits + 2);
+      let s = x.toFixed(digits);
+      if (neg) s = `−${s}`;
+      return s;
+    };
     // Keep labels narrow so a fixed grid.left can stay aligned across charts.
-    if (abs >= 1_000_000) return `${(v / 1_000_000).toFixed(abs >= 10_000_000 ? 0 : 1)}M`;
-    if (abs >= 1_000) return `${(v / 1_000).toFixed(abs >= 10_000 ? 0 : 1)}k`;
-    if (abs >= 10) return v.toFixed(0);
-    if (abs >= 1) return v.toFixed(1);
-    return v.toFixed(2);
+    if (abs >= 1_000_000) return `${toFixedHalfUp(v / 1_000_000, abs >= 10_000_000 ? 0 : 1)}M`;
+    if (abs >= 1_000) return `${toFixedHalfUp(v / 1_000, abs >= 10_000 ? 0 : 1)}k`;
+    if (abs >= 10) return toFixedHalfUp(v, 0);
+    if (abs >= 1) return toFixedHalfUp(v, 1);
+    // Small magnitudes: show more decimals to avoid flattening the axis (e.g. 0.001–0.003).
+    // Target ~2 significant digits, clamped to a max of 4 decimals for label compactness.
+    const log10 = Math.floor(Math.log10(abs));
+    const decimals = Math.max(0, Math.min(4, 2 - log10 - 1));
+    const s = toFixedHalfUp(v, decimals);
+    return s.replace(/(\.\d*?)0+$/, "$1").replace(/\.$/, "");
   };
 
   const highlightColor = theme.colorPaletteRedForeground1;
@@ -1124,6 +1144,7 @@ export const ChartGrid = memo(forwardRef<ChartGridRef, ChartGridProps>(
                   data,
                   symbol: "none" as const,
                   connectNulls: false,
+                  sampling: "lttb" as const,
                   lineStyle: cartesianLineSeriesLineStyle,
                   emphasis: {
                     lineStyle: cartesianLineSeriesLineStyle,
@@ -1227,6 +1248,7 @@ export const ChartGrid = memo(forwardRef<ChartGridRef, ChartGridProps>(
                 data,
                 symbol: "none" as const,
                 connectNulls: false,
+                sampling: "lttb" as const,
                 lineStyle: cartesianLineSeriesLineStyle,
                 emphasis: {
                   lineStyle: cartesianLineSeriesLineStyle,
@@ -1268,6 +1290,7 @@ export const ChartGrid = memo(forwardRef<ChartGridRef, ChartGridProps>(
               setContextMenu({ x: e.clientX, y: e.clientY, chartIndex: index });
             }}
             style={{
+              boxSizing: "border-box",
               border: `1px solid ${theme.colorNeutralStroke2}`,
               borderRadius: theme.borderRadiusMedium,
               ...(isSpatialChart ? { position: "relative" } : undefined),
@@ -1277,7 +1300,7 @@ export const ChartGrid = memo(forwardRef<ChartGridRef, ChartGridProps>(
                     paddingTop: "0.5em",
                     paddingRight: "0.5em",
                     paddingBottom: "1em",
-                    paddingLeft: 0,
+                    paddingLeft: "1em",
                   }
                 : undefined),
             }}
