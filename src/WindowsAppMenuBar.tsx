@@ -238,6 +238,15 @@ export function WindowsAppMenuBar({
               >
                 Globe Trace
               </MenuItem>
+              <MenuDivider />
+              <MenuItem
+                disabled={!viewCommandsEnabled}
+                onClick={() => {
+                  if (viewCommandsEnabled) void emit("view-toggle-zoom-slider", undefined);
+                }}
+              >
+                Zoom Slider
+              </MenuItem>
             </MenuList>
           </MenuPopover>
         </Menu>

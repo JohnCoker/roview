@@ -23,8 +23,8 @@ import {
   dataUrlToBytes,
   errorMessage,
   EXPORT_EXT,
-  CHART_EXPORT_DATA_URL_OPTS,
 } from "./util";
+import { getChartDataUrlForExport } from "./chartExport";
 
 const FORMATS = [
   { value: "png" as const, label: "PNG" },
@@ -65,7 +65,7 @@ async function getChartImages(
   for (let i = 0; i < count; i++) {
     let dataUrl: string;
     try {
-      dataUrl = charts[i].getDataURL({ type: format, ...CHART_EXPORT_DATA_URL_OPTS });
+      dataUrl = await getChartDataUrlForExport(charts[i], format);
     } catch (e) {
       await showMessage(
         `Export failed for chart "${chartNames[i]}": ${errorMessage(e)}`,

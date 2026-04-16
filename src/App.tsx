@@ -9,6 +9,7 @@ import { RunFile, Problem } from "./RunFile";
 import { LoadedFileView } from "./LoadedFileView";
 import { UiErrorBoundary } from "./UiErrorBoundary";
 import { isWindowsPlatform, WindowsAppMenuBar } from "./WindowsAppMenuBar";
+import { MAP_TRACE_SELECTION, GLOBE_TRACE_SELECTION } from "./util";
 import "./App.css";
 
 export interface AppProps {
@@ -22,6 +23,7 @@ function App({ theme }: AppProps) {
   const [problems, setProblems] = useState<Problem[] | null>(null);
   const [showWarnings, setShowWarnings] = useState(true);
   const [selectedColumns, setSelectedColumns] = useState<string[]>([]);
+  const [zoomSliderEnabled, setZoomSliderEnabled] = useState(false);
   /** True only while readTextFile + validation for currentFilePath are in flight. */
   const [isReadingFile, setIsReadingFile] = useState(false);
 
@@ -111,6 +113,14 @@ function App({ theme }: AppProps) {
     invoke("set_globe_enabled", { enabled }).catch(() => {});
   }, [runFile]);
 
+  useEffect(() => {
+    // Keep native menu checkmarks (macOS/Linux) in sync with selection.
+    const mapChecked = selectedColumns.includes(MAP_TRACE_SELECTION);
+    const globeChecked = selectedColumns.includes(GLOBE_TRACE_SELECTION);
+    invoke("set_map_trace_checked", { checked: mapChecked }).catch(() => {});
+    invoke("set_globe_trace_checked", { checked: globeChecked }).catch(() => {});
+  }, [selectedColumns]);
+
   useLayoutEffect(() => {
     let cancelled = false;
     let unlisteners: (() => void)[] = [];
@@ -149,6 +159,9 @@ function App({ theme }: AppProps) {
             }
             if (paths.length > 0) setCurrentFilePath(paths[0]);
           })();
+        }),
+        listen("view-toggle-zoom-slider", () => {
+          setZoomSliderEnabled((prev) => !prev);
         }),
       ]);
       if (cancelled) {
@@ -349,6 +362,7 @@ function App({ theme }: AppProps) {
             theme={theme}
             selectedColumns={selectedColumns}
             onSelectionChange={setSelectedColumns}
+            showZoomSlider={zoomSliderEnabled}
           />
         </UiErrorBoundary>
       </main>
@@ -391,6 +405,7 @@ function App({ theme }: AppProps) {
             theme={theme}
             selectedColumns={selectedColumns}
             onSelectionChange={setSelectedColumns}
+            showZoomSlider={zoomSliderEnabled}
           />
         </UiErrorBoundary>
       </main>

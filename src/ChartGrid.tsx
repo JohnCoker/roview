@@ -29,7 +29,9 @@ import {
   errorMessage,
   EXPORT_EXT,
   EXPORT_FORMAT_LABEL,
-  CHART_EXPORT_DATA_URL_OPTS,
+  CARTESIAN_GRID_BOTTOM_NO_SLIDER,
+  CARTESIAN_GRID_BOTTOM_WITH_SLIDER,
+  PLAYBACK_HIGHLIGHT_SERIES_ID,
   LAT_LONG_LINE_LABEL,
   LAT_LONG_LINE_SELECTION,
   MAP_TRACE_LABEL,
@@ -40,6 +42,7 @@ import {
   isMapTraceSelection,
   isGlobeTraceSelection,
 } from "./util";
+import { getChartDataUrlForExport } from "./chartExport";
 
 export interface ChartGridProps {
   runFile: RunFile;
@@ -47,6 +50,7 @@ export interface ChartGridProps {
   selectedColumnNames: string[];
   scrollTargetKey?: string | null;
   highlightTime?: number | null;
+  showZoomSlider?: boolean;
 }
 
 export interface ChartGridRef {
@@ -61,9 +65,17 @@ type GlobeChartSelection = { key: string; label: string; kind: "globe" };
 type ChartSelection = LineChartSelection | MapChartSelection | LatLongLineChartSelection | GlobeChartSelection;
 
 const WORLD_MAP_NAME = "roview-world";
-const PLAYBACK_HIGHLIGHT_SERIES_ID = "playback-highlight";
 /** Geo `lines` polyline (stable paint); dense `scatter` “lines” glitch on hover in ECharts 5 + geo. */
 const MAP_TRACE_LINE_SERIES_ID = "map-trace-line";
+/** Globe `lines3D` polyline — same rationale as map: continuous stroke + shared line styling with Cartesian charts. */
+const GLOBE_TRACE_LINE_SERIES_ID = "globe-trace-line";
+/**
+ * Invisible `scatter3D` used only for (1) globe altitude-axis extent — echarts-gl does not read `alt` from `lines3D`
+ * coords when building `globeModel.coordinateSystem.altitudeAxis` — and (2) hover tooltips (`lines3D` mesh ignores picking).
+ * Slight radial bump keeps pick hits in front of the line in the depth buffer.
+ */
+const GLOBE_TRACE_PICK_SERIES_ID = "globe-trace-pick";
+const GLOBE_TRACE_PICK_ALT_BUMP = 0.12;
 const LINE_CHART_MIN_HEIGHT = 200;
 const MAP_CHART_MIN_HEIGHT = 320;
 const GLOBE_RADIUS = 100;
@@ -280,6 +292,119 @@ function attachMapTraceTooltipInteraction(
   });
 }
 
+type GlobeTracePoint = {
+  value: [number, number, number];
+  rawLong: number;
+  rawLat: number;
+  rawAlt: number | null;
+  time: number | null;
+};
+
+/**
+ * One continuous `lines3D` polyline for the globe.
+ *
+ * Unlike {@link splitMapTracePolylineOnLongitudeWrap} (2D geo), we do **not** split into
+ * multiple `lines3D` data items at ±180°: each item is its own polyline, so the segment that
+ * actually crosses the antimeridian is never drawn and a gap appears at 180°E/W.
+ *
+ * Unwrap longitude step by step (add/subtract 360°) so each hop is within 180° of the previous
+ * sample; e.g. 179° then −179° becomes 179° then 181°. The globe
+ * `dataToPoint` mapping is periodic in longitude, so 3D positions stay correct while the
+ * polyline stays connected.
+ *
+ * (Map trace still uses chunk splitting because 2D geo must keep lon in [-180, 180] and avoid
+ * drawing a chord across the flat map.)
+ */
+function buildGlobeTracePolylineChunks(points: GlobeTracePoint[]): {
+  chunks: {
+    coords: [number, number, number][];
+    times: (number | null)[];
+    rawLongs: number[];
+    rawLats: number[];
+    rawAlts: (number | null)[];
+  }[];
+} {
+  if (points.length === 0) return { chunks: [] };
+
+  const coords: [number, number, number][] = [];
+  const times: (number | null)[] = [];
+  const rawLongs: number[] = [];
+  const rawLats: number[] = [];
+  const rawAlts: (number | null)[] = [];
+
+  let prevUnwrappedLon: number | null = null;
+  for (const pt of points) {
+    let lon = pt.value[0];
+    const lat = pt.value[1];
+    const h = pt.value[2];
+    if (prevUnwrappedLon != null) {
+      while (lon - prevUnwrappedLon > 180) lon -= 360;
+      while (lon - prevUnwrappedLon < -180) lon += 360;
+    }
+    prevUnwrappedLon = lon;
+    coords.push([lon, lat, h]);
+    times.push(pt.time);
+    rawLongs.push(pt.rawLong);
+    rawLats.push(pt.rawLat);
+    rawAlts.push(pt.rawAlt);
+  }
+
+  if (coords.length === 1) {
+    const c = coords[0];
+    coords.push([c[0], c[1], c[2]]);
+    times.push(times[0]);
+    rawLongs.push(rawLongs[0]);
+    rawLats.push(rawLats[0]);
+    rawAlts.push(rawAlts[0]);
+  }
+
+  return { chunks: [{ coords, times, rawLongs, rawLats, rawAlts }] };
+}
+
+type GlobeTraceBuiltBundle = {
+  points: GlobeTracePoint[];
+  chunks: {
+    coords: [number, number, number][];
+    times: (number | null)[];
+    rawLongs: number[];
+    rawLats: number[];
+    rawAlts: (number | null)[];
+  }[];
+  maxGlobeAlt: number;
+  centerLat: number;
+  centerLong: number;
+  globeHighlightAltBump: number;
+  globeCols: NonNullable<ReturnType<RunFile["globeColumns"]>>;
+};
+
+function buildGlobeTracePoints(runFile: RunFile, timeValues: (number | null)[]): GlobeTracePoint[] | null {
+  const globeCols = runFile.globeColumns();
+  if (globeCols == null) return null;
+  const altToMeters = distanceToMeters(globeCols.alt);
+  const latValues = runFile.getColumnValues(globeCols.lat.name);
+  const longValues = runFile.getColumnValues(globeCols.long.name);
+  const altValues = runFile.getColumnValues(globeCols.alt.name);
+  const metersToGlobe = GLOBE_RADIUS / EARTH_RADIUS_M;
+  const globePoints: GlobeTracePoint[] = [];
+  for (let i = 0; i < latValues.length; i++) {
+    const lat = latValues[i];
+    const long = longValues[i];
+    const rawAlt = altValues[i];
+    const altM = altToMeters ? altToMeters(rawAlt) : rawAlt;
+    if (lat == null || long == null || altM == null) continue;
+    const globeAlt = altM * metersToGlobe;
+    const normLong = normalizeLongitudeDegrees(long);
+    globePoints.push({
+      value: [normLong, lat, globeAlt],
+      rawLong: long,
+      rawLat: lat,
+      rawAlt: rawAlt,
+      time: timeValues[i] ?? null,
+    });
+  }
+  return globePoints;
+}
+
 const MAP_ZOOM_MIN = 1;
 const MAP_ZOOM_MAX = 20;
 const GLOBE_DIST_DEFAULT = 200;
@@ -494,7 +619,7 @@ if (echarts.getMap(WORLD_MAP_NAME) == null) {
 }
 
 export const ChartGrid = memo(forwardRef<ChartGridRef, ChartGridProps>(
-  function ChartGrid({ runFile, theme, selectedColumnNames, scrollTargetKey, highlightTime }, ref) {
+  function ChartGrid({ runFile, theme, selectedColumnNames, scrollTargetKey, highlightTime, showZoomSlider }, ref) {
   const chartRefs = useRef<ECharts[]>([]);
   const reactEChartsRefs = useRef<ReactEChartsRef[]>([]);
   const chartItemRefs = useRef<Record<string, HTMLDivElement | null>>({});
@@ -517,7 +642,13 @@ export const ChartGrid = memo(forwardRef<ChartGridRef, ChartGridProps>(
   const chartAxisStrokePx = 1.25;
   /** Cartesian charts: balanced grid + ~one-letter tick–axis gap; H/V name gaps aligned. */
   /** Extra room for labels when margin increases (containLabel: false keeps multi-chart alignment). */
-  const cartesianGrid = { left: 76, right: 12, top: 10, bottom: 48, containLabel: false } as const;
+  const cartesianGrid = {
+    left: 76,
+    right: 12,
+    top: 10,
+    bottom: showZoomSlider ? CARTESIAN_GRID_BOTTOM_WITH_SLIDER : CARTESIAN_GRID_BOTTOM_NO_SLIDER,
+    containLabel: false,
+  } as const;
   const cartesianXAxisNameGap = 34;
   const cartesianYAxisNameGap = 62;
   /** ~1 letter / “space” between tick marks and scale numbers (reviewer). */
@@ -547,6 +678,79 @@ export const ChartGrid = memo(forwardRef<ChartGridRef, ChartGridProps>(
   const shadow = theme.shadow16;
   const tooltipBg = theme.colorNeutralBackground1;
   const tooltipBorder = theme.colorNeutralStroke1;
+
+  const buildCartesianValueAxis = (params: { axis: "x" | "y"; name: string }) => {
+    const base = {
+      type: "value" as const,
+      name: params.name,
+      nameLocation: "middle" as const,
+      splitLine: cartesianSplitLine,
+      axisLine: cartesianAxisLine,
+      axisTick: cartesianAxisTick,
+      axisLabel: {
+        ...cartesianAxisLabelBase,
+        formatter: formatAxisTick,
+        hideOverlap: true,
+      },
+      nameTextStyle: cartesianNameTextStyle,
+    };
+    if (params.axis === "x") {
+      return {
+        ...base,
+        nameGap: cartesianXAxisNameGap,
+      };
+    }
+    return {
+      ...base,
+      nameGap: cartesianYAxisNameGap,
+      nameRotate: 90,
+    };
+  };
+
+  const buildCartesianOption = (params: {
+    xAxis: Record<string, unknown>;
+    yAxis: Record<string, unknown>;
+    tooltipFormatter: (params: unknown) => string;
+    series: Record<string, unknown>[];
+  }): Record<string, unknown> => {
+    return {
+      textStyle: cartesianTextStyle,
+      grid: { ...cartesianGrid },
+      tooltip: {
+        trigger: "axis" as const,
+        axisPointer: { type: "line" as const },
+        backgroundColor: tooltipBg,
+        borderColor: tooltipBorder,
+        borderWidth: 1,
+        padding: 8,
+        textStyle: cartesianTextStyle,
+        formatter: params.tooltipFormatter as never,
+      },
+      xAxis: params.xAxis,
+      yAxis: params.yAxis,
+      dataZoom: [
+        {
+          type: "inside" as const,
+          xAxisIndex: 0,
+          zoomOnMouseWheel: "ctrl" as const,
+          moveOnMouseWheel: false,
+          moveOnMouseMove: false,
+          zoomLock: true,
+        },
+        {
+          type: "slider" as const,
+          xAxisIndex: 0,
+          show: showZoomSlider,
+          height: 18,
+          bottom: 0,
+          showDetail: false,
+          showDataShadow: false,
+          brushSelect: false,
+        },
+      ],
+      series: params.series,
+    };
+  };
   const chartSelections: ChartSelection[] = selectedColumnNames.flatMap((name): ChartSelection[] => {
     if (isMapTraceSelection(name)) {
       return runFile.locationColumns() != null
@@ -687,6 +891,39 @@ export const ChartGrid = memo(forwardRef<ChartGridRef, ChartGridProps>(
   /** Pointer in ZRender space; drives `tooltip.position` so the box tracks the cursor instead of the polyline vertex. */
   const mapTraceTooltipMouseRef = useRef({ x: 0, y: 0 });
 
+  const globeTraceSelected = selectedColumnNames.includes(GLOBE_TRACE_SELECTION);
+
+  const globeTraceBuilt = useMemo((): GlobeTraceBuiltBundle | null => {
+    if (!globeTraceSelected || timeCol == null) return null;
+    const points = buildGlobeTracePoints(runFile, timeValues);
+    if (points == null || points.length === 0) return null;
+    const { chunks } = buildGlobeTracePolylineChunks(points);
+    if (chunks.length === 0) return null;
+    let maxGlobeAlt = 0;
+    let latSum = 0;
+    let longSum = 0;
+    for (const p of points) {
+      if (p.value[2] > maxGlobeAlt) maxGlobeAlt = p.value[2];
+      latSum += p.value[1];
+      longSum += p.value[0];
+    }
+    const n = points.length;
+    const centerLat = n > 0 ? latSum / n : 0;
+    const centerLong = n > 0 ? longSum / n : 0;
+    const globeHighlightAltBump = Math.max(GLOBE_PLAYBACK_HIGHLIGHT_ALT_BUMP_MIN, maxGlobeAlt * 0.04);
+    const globeCols = runFile.globeColumns();
+    if (globeCols == null) return null;
+    return {
+      points,
+      chunks,
+      maxGlobeAlt,
+      centerLat,
+      centerLong,
+      globeHighlightAltBump,
+      globeCols,
+    };
+  }, [globeTraceSelected, timeCol, runFile, timeValues]);
+
   const mapTraceBuilt = useMemo(() => {
     if (!mapTraceSelected || timeCol == null) return null;
     const points = buildMapTraceScatterPoints(runFile, timeValues);
@@ -785,6 +1022,30 @@ export const ChartGrid = memo(forwardRef<ChartGridRef, ChartGridProps>(
     },
   }));
 
+  /** Hiding the slider should show the full X range again (slider was the main zoom affordance). */
+  const prevShowZoomSliderRef = useRef<boolean | undefined>(undefined);
+  useEffect(() => {
+    const prev = prevShowZoomSliderRef.current;
+    prevShowZoomSliderRef.current = showZoomSlider;
+    if (prev !== true || showZoomSlider !== false) return;
+    if (!timeCol || chartSelections.length === 0) return;
+
+    queueMicrotask(() => {
+      for (let i = 0; i < reactEChartsRefs.current.length && i < chartSelections.length; i++) {
+        const kind = chartSelections[i]?.kind;
+        if (kind !== "line" && kind !== "latLong") continue;
+        const inst = reactEChartsRefs.current[i]?.getEchartsInstance();
+        if (!inst) continue;
+        inst.dispatchAction({
+          type: "dataZoom",
+          xAxisIndex: 0,
+          start: 0,
+          end: 100,
+        } as never);
+      }
+    });
+  }, [showZoomSlider, timeCol, chartSelections]);
+
   if (!timeCol || chartSelections.length === 0) {
     return (
       <p className="chart-grid-empty">Select columns above to add charts.</p>
@@ -806,7 +1067,7 @@ export const ChartGrid = memo(forwardRef<ChartGridRef, ChartGridProps>(
     if (!chart) return;
     let dataUrl: string;
     try {
-      dataUrl = chart.getDataURL({ type: format, ...CHART_EXPORT_DATA_URL_OPTS });
+      dataUrl = await getChartDataUrlForExport(chart, format);
     } catch (e) {
       await showMessage(errorMessage(e), { title: "Export error", kind: "error" });
       return;
@@ -907,54 +1168,35 @@ export const ChartGrid = memo(forwardRef<ChartGridRef, ChartGridProps>(
             return mapTraceBuilt != null ? (mapTraceBuilt.option as object) : null;
           }
           if (selection.kind === "globe") {
-            const globeCols = runFile.globeColumns();
-            if (globeCols == null) return null;
-            const altToMeters = distanceToMeters(globeCols.alt);
-            const latValues = runFile.getColumnValues(globeCols.lat.name);
-            const longValues = runFile.getColumnValues(globeCols.long.name);
-            const altValues = runFile.getColumnValues(globeCols.alt.name);
+            if (globeTraceBuilt == null) return null;
+            const {
+              points: globePoints,
+              chunks,
+              maxGlobeAlt,
+              centerLat,
+              centerLong,
+              globeHighlightAltBump,
+              globeCols,
+            } = globeTraceBuilt;
             const latKind = globeCols.lat.kind();
             const latUnit = globeCols.lat.unit();
             const longKind = globeCols.long.kind();
             const longUnit = globeCols.long.unit();
             const altKind = globeCols.alt.kind();
             const altUnit = globeCols.alt.unit();
-            const metersToGlobe = GLOBE_RADIUS / EARTH_RADIUS_M;
-            const globePoints: { value: [number, number, number]; rawLong: number; rawLat: number; rawAlt: number | null; time: number | null }[] = [];
-            let maxGlobeAlt = 0;
-            let latSum = 0;
-            let longSum = 0;
-            let pointCount = 0;
-            for (let i = 0; i < latValues.length; i++) {
-              const lat = latValues[i];
-              const long = longValues[i];
-              const rawAlt = altValues[i];
-              const altM = altToMeters ? altToMeters(rawAlt) : rawAlt;
-              if (lat == null || long == null || altM == null) continue;
-              const globeAlt = altM * metersToGlobe;
-              if (globeAlt > maxGlobeAlt) maxGlobeAlt = globeAlt;
-              const normLong = normalizeLongitudeDegrees(long);
-              latSum += lat;
-              longSum += normLong;
-              pointCount++;
-              globePoints.push({
-                value: [normLong, lat, globeAlt],
-                rawLong: long,
-                rawLat: lat,
-                rawAlt: rawAlt,
-                time: timeValues[i] ?? null,
-              });
-            }
-            const centerLat = pointCount > 0 ? latSum / pointCount : 0;
-            const centerLong = pointCount > 0 ? longSum / pointCount : 0;
-            const globeHighlightAltBump = Math.max(GLOBE_PLAYBACK_HIGHLIGHT_ALT_BUMP_MIN, maxGlobeAlt * 0.04);
 
             return {
-              // Globe-only: echarts-gl scatter3D can morph points with ignorePreZ; keep chart + highlight updates non-animated.
+              // Globe-only: keep chart + highlight updates non-animated (see `PLAYBACK_HIGHLIGHT_ANIMATION`).
               animation: false,
               backgroundColor: theme.colorNeutralBackground2,
+              textStyle: {
+                fontFamily: chartFontFamily,
+                fontWeight: theme.fontWeightSemibold,
+                color: chartText,
+              },
               tooltip: {
                 trigger: "item" as const,
+                transitionDuration: 0,
                 backgroundColor: tooltipBg,
                 borderColor: tooltipBorder,
                 borderWidth: 1,
@@ -964,9 +1206,12 @@ export const ChartGrid = memo(forwardRef<ChartGridRef, ChartGridProps>(
                   fontWeight: theme.fontWeightSemibold,
                   color: chartText,
                 },
-                formatter: (params: any) => {
-                  const d = params?.data as { rawLong?: number; rawLat?: number; rawAlt?: number | null; time?: number | null } | undefined;
-                  if (!d) return "";
+                formatter: (params: unknown) => {
+                  const p = params as {
+                    data?: { rawLong?: number; rawLat?: number; rawAlt?: number | null; time?: number | null };
+                  };
+                  const d = p.data;
+                  if (d == null || typeof d.rawLong !== "number") return "";
                   const timeLabel = `${timeCol.kind()}: ${formatVal(d.time ?? null)}${
                     timeCol.unit() ? ` ${timeCol.unit()}` : ""
                   }`;
@@ -1007,19 +1252,46 @@ export const ChartGrid = memo(forwardRef<ChartGridRef, ChartGridProps>(
                   main: { intensity: 0 },
                 },
               },
-              series: [
+                           series: [
                 {
+                  id: GLOBE_TRACE_LINE_SERIES_ID,
+                  type: "lines3D" as const,
+                  coordinateSystem: "globe" as const,
+                  polyline: true,
+                  zlevel: -10,
+                  silent: true,
+                  blendMode: "source-over" as const,
+                  lineStyle: { ...cartesianLineSeriesLineStyle, opacity: 1 },
+                  animation: false,
+                  animationDurationUpdate: 0,
+                  tooltip: { show: false },
+                  data: chunks.map((ch) => ({ coords: ch.coords })),
+                },
+                {
+                  id: GLOBE_TRACE_PICK_SERIES_ID,
                   type: "scatter3D" as const,
                   coordinateSystem: "globe" as const,
-                  zlevel: -10,
-                  symbolSize: 3,
+                  zlevel: 5,
+                  symbolSize: 6,
                   label: { show: false },
-                  emphasis: { label: { show: false } },
+                  emphasis: {
+                    label: { show: false },
+                    itemStyle: { opacity: 0 },
+                  },
                   itemStyle: {
                     color: chartAccent,
-                    opacity: 0.85,
+                    opacity: 0,
                   },
-                  data: globePoints,
+                  silent: false,
+                  animation: false,
+                  animationDurationUpdate: 0,
+                  data: globePoints.map((p) => ({
+                    value: [p.value[0], p.value[1], p.value[2] + GLOBE_TRACE_PICK_ALT_BUMP] as [number, number, number],
+                    rawLong: p.rawLong,
+                    rawLat: p.rawLat,
+                    rawAlt: p.rawAlt,
+                    time: p.time,
+                  })),
                 },
                 {
                   id: PLAYBACK_HIGHLIGHT_SERIES_ID,
@@ -1031,6 +1303,7 @@ export const ChartGrid = memo(forwardRef<ChartGridRef, ChartGridProps>(
                   emphasis: { label: { show: false } },
                   itemStyle: { color: highlightColor, opacity: 1 },
                   silent: true,
+                  tooltip: { show: false },
                   data: playbackHighlightData(
                     highlightTime,
                     globePoints,
@@ -1073,71 +1346,21 @@ export const ChartGrid = memo(forwardRef<ChartGridRef, ChartGridProps>(
             const longKind = locationColumns.long.kind();
             const longUnit = locationColumns.long.unit();
 
-            return {
-              textStyle: cartesianTextStyle,
-              grid: { ...cartesianGrid },
-              tooltip: {
-                trigger: "axis" as const,
-                axisPointer: { type: "line" as const },
-                backgroundColor: tooltipBg,
-                borderColor: tooltipBorder,
-                borderWidth: 1,
-                padding: 8,
-                textStyle: cartesianTextStyle,
-                formatter: (params: any) => {
-                  const p = Array.isArray(params) ? params[0] : params;
-                  const value = Array.isArray(p?.value) ? p.value : [p?.value, null];
-                  const longV = (p?.data?.rawLong ?? value[0]) as number | null | undefined;
-                  const latV = value[1] as number | null | undefined;
-                  const t = p?.data?.time as number | null | undefined;
+            return buildCartesianOption({
+              xAxis: buildCartesianValueAxis({ axis: "x", name: locationColumns.long.name }),
+              yAxis: buildCartesianValueAxis({ axis: "y", name: locationColumns.lat.name }),
+              tooltipFormatter: (params: unknown) => {
+                const p = Array.isArray(params) ? (params as any[])[0] : (params as any);
+                const value = Array.isArray(p?.value) ? p.value : [p?.value, null];
+                const longV = (p?.data?.rawLong ?? value[0]) as number | null | undefined;
+                const latV = value[1] as number | null | undefined;
+                const t = p?.data?.time as number | null | undefined;
 
-                  const timeLabel = `${timeKind}: ${formatVal(t)}${timeUnit ? ` ${timeUnit}` : ""}`;
-                  const longLabel = `${longKind}: ${formatVal(longV)}${longUnit ? ` ${longUnit}` : ""}`;
-                  const latLabel = `${latKind}: ${formatVal(latV)}${latUnit ? ` ${latUnit}` : ""}`;
-                  return `${timeLabel}<br/>${longLabel}<br/>${latLabel}`;
-                },
+                const timeLabel = `${timeKind}: ${formatVal(t)}${timeUnit ? ` ${timeUnit}` : ""}`;
+                const longLabel = `${longKind}: ${formatVal(longV)}${longUnit ? ` ${longUnit}` : ""}`;
+                const latLabel = `${latKind}: ${formatVal(latV)}${latUnit ? ` ${latUnit}` : ""}`;
+                return `${timeLabel}<br/>${longLabel}<br/>${latLabel}`;
               },
-              xAxis: {
-                type: "value" as const,
-                name: locationColumns.long.name,
-                nameLocation: "middle",
-                nameGap: cartesianXAxisNameGap,
-                splitLine: cartesianSplitLine,
-                axisLine: cartesianAxisLine,
-                axisTick: cartesianAxisTick,
-                axisLabel: {
-                  ...cartesianAxisLabelBase,
-                  formatter: formatAxisTick,
-                  hideOverlap: true,
-                },
-                nameTextStyle: cartesianNameTextStyle,
-              },
-              yAxis: {
-                type: "value" as const,
-                name: locationColumns.lat.name,
-                nameLocation: "middle",
-                nameGap: cartesianYAxisNameGap,
-                nameRotate: 90,
-                axisLine: cartesianAxisLine,
-                axisTick: cartesianAxisTick,
-                axisLabel: {
-                  ...cartesianAxisLabelBase,
-                  formatter: formatAxisTick,
-                  hideOverlap: true,
-                },
-                nameTextStyle: cartesianNameTextStyle,
-                splitLine: cartesianSplitLine,
-              },
-              dataZoom: [
-                {
-                  type: "inside" as const,
-                  xAxisIndex: 0,
-                  zoomOnMouseWheel: "ctrl" as const,
-                  moveOnMouseWheel: false,
-                  moveOnMouseMove: false,
-                  zoomLock: true,
-                },
-              ],
               series: [
                 {
                   type: "line" as const,
@@ -1162,7 +1385,7 @@ export const ChartGrid = memo(forwardRef<ChartGridRef, ChartGridProps>(
                   tooltip: { show: false },
                 },
               ],
-            };
+            });
           }
           const col = selection.col;
           if (col == null) return null;
@@ -1176,72 +1399,19 @@ export const ChartGrid = memo(forwardRef<ChartGridRef, ChartGridProps>(
           const colKind = col.kind();
           const colUnit = col.unit();
 
-          return {
-            textStyle: cartesianTextStyle,
-            grid: { ...cartesianGrid },
-            tooltip: {
-              trigger: "axis" as const,
-              axisPointer: { type: "line" as const },
-              backgroundColor: tooltipBg,
-              borderColor: tooltipBorder,
-              borderWidth: 1,
-              padding: 8,
-              textStyle: cartesianTextStyle,
-              formatter: (params: any) => {
-                const p = Array.isArray(params) ? params[0] : params;
-                const value = Array.isArray(p?.value) ? p.value : [p?.value, null];
-                const time = value[0] as number | null | undefined;
-                const y = value[1] as number | null | undefined;
+          return buildCartesianOption({
+            xAxis: buildCartesianValueAxis({ axis: "x", name: timeCol.name }),
+            yAxis: buildCartesianValueAxis({ axis: "y", name: col.name }),
+            tooltipFormatter: (params: unknown) => {
+              const p = Array.isArray(params) ? (params as any[])[0] : (params as any);
+              const value = Array.isArray(p?.value) ? p.value : [p?.value, null];
+              const time = value[0] as number | null | undefined;
+              const y = value[1] as number | null | undefined;
 
-                const timeLabel = `${timeKind}: ${formatVal(time)}${
-                  timeUnit ? ` ${timeUnit}` : ""
-                }`;
-                const colLabel = `${colKind}: ${formatVal(y)}${colUnit ? ` ${colUnit}` : ""}`;
-
-                return `${timeLabel}<br/>${colLabel}`;
-              },
+              const timeLabel = `${timeKind}: ${formatVal(time)}${timeUnit ? ` ${timeUnit}` : ""}`;
+              const colLabel = `${colKind}: ${formatVal(y)}${colUnit ? ` ${colUnit}` : ""}`;
+              return `${timeLabel}<br/>${colLabel}`;
             },
-            xAxis: {
-              type: "value" as const,
-              name: timeCol.name,
-              nameLocation: "middle",
-              nameGap: cartesianXAxisNameGap,
-              splitLine: cartesianSplitLine,
-              axisLine: cartesianAxisLine,
-              axisTick: cartesianAxisTick,
-              axisLabel: {
-                ...cartesianAxisLabelBase,
-                formatter: formatAxisTick,
-                hideOverlap: true,
-              },
-              nameTextStyle: cartesianNameTextStyle,
-            },
-            yAxis: {
-              type: "value" as const,
-              name: col.name,
-              nameLocation: "middle",
-              nameGap: cartesianYAxisNameGap,
-              nameRotate: 90,
-              axisLine: cartesianAxisLine,
-              axisTick: cartesianAxisTick,
-              axisLabel: {
-                ...cartesianAxisLabelBase,
-                formatter: formatAxisTick,
-                hideOverlap: true,
-              },
-              nameTextStyle: cartesianNameTextStyle,
-              splitLine: cartesianSplitLine,
-            },
-            dataZoom: [
-              {
-                type: "inside" as const,
-                xAxisIndex: 0,
-                zoomOnMouseWheel: "ctrl" as const,
-                moveOnMouseWheel: false,
-                moveOnMouseMove: false,
-                zoomLock: true,
-              },
-            ],
             series: [
               {
                 type: "line" as const,
@@ -1266,7 +1436,7 @@ export const ChartGrid = memo(forwardRef<ChartGridRef, ChartGridProps>(
                 tooltip: { show: false },
               },
             ],
-          };
+          });
         })();
 
         if (option == null) return null;

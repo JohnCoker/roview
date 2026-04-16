@@ -24,6 +24,7 @@ export interface LoadedFileViewProps {
   theme: Theme;
   selectedColumns: string[];
   onSelectionChange: (selected: string[]) => void;
+  showZoomSlider?: boolean;
 }
 
 export function LoadedFileView({
@@ -31,6 +32,7 @@ export function LoadedFileView({
   theme,
   selectedColumns,
   onSelectionChange,
+  showZoomSlider,
 }: LoadedFileViewProps) {
   /** Stable refs so the menu-listener effect does not re-run every render (was breaking Map Trace on macOS). */
   const dataColumns = useMemo(() => runFile.dataColumns(), [runFile]);
@@ -274,6 +276,7 @@ export function LoadedFileView({
           selectedColumnNames={selectedColumns}
           scrollTargetKey={scrollTargetKey}
           highlightTime={playbackActive ? currentTime : null}
+          showZoomSlider={showZoomSlider}
         />
       </div>
       {hasCharts && timeCol != null && (

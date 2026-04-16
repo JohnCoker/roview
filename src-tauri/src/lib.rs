@@ -2,7 +2,7 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use std::sync::RwLock;
 #[cfg(not(windows))]
-use tauri::menu::{AboutMetadata, Menu, MenuBuilder, MenuItemBuilder, Submenu, SubmenuBuilder};
+use tauri::menu::{AboutMetadata, CheckMenuItemBuilder, Menu, MenuBuilder, MenuItemBuilder, Submenu, SubmenuBuilder};
 use tauri::Emitter;
 use tauri::Manager;
 use tauri_plugin_store::StoreExt;
@@ -18,6 +18,9 @@ pub struct AppState {
     pub view_columns_enabled: RwLock<bool>,
     pub location_enabled: RwLock<bool>,
     pub globe_enabled: RwLock<bool>,
+    pub zoom_slider_enabled: RwLock<bool>,
+    pub map_trace_checked: RwLock<bool>,
+    pub globe_trace_checked: RwLock<bool>,
 }
 
 #[cfg(not(windows))]
@@ -228,6 +231,11 @@ fn build_app_menu(handle: &tauri::AppHandle, state: &AppState) -> tauri::Result<
         .read()
         .map(|g| *g)
         .unwrap_or(false);
+    let zoom_slider_enabled = state
+        .zoom_slider_enabled
+        .read()
+        .map(|g| *g)
+        .unwrap_or(false);
     let location_enabled = state
         .location_enabled
         .read()
@@ -238,16 +246,35 @@ fn build_app_menu(handle: &tauri::AppHandle, state: &AppState) -> tauri::Result<
         .read()
         .map(|g| *g)
         .unwrap_or(false);
+    let map_trace_checked = state
+        .map_trace_checked
+        .read()
+        .map(|g| *g)
+        .unwrap_or(false);
+    let globe_trace_checked = state
+        .globe_trace_checked
+        .read()
+        .map(|g| *g)
+        .unwrap_or(false);
     let first_four_item =
         MenuItemBuilder::with_id("view-first-4-columns", "First 4 Columns").enabled(view_enabled).build(handle)?;
     let all_columns_item =
         MenuItemBuilder::with_id("view-all-columns", "All Columns").enabled(view_enabled).build(handle)?;
     let select_columns_item =
         MenuItemBuilder::with_id("view-select-columns", "Select Columns…").enabled(view_enabled).build(handle)?;
-    let map_trace_item =
-        MenuItemBuilder::with_id("view-map-trace", "Map Trace").enabled(location_enabled).build(handle)?;
-    let globe_trace_item =
-        MenuItemBuilder::with_id("view-globe-trace", "Globe Trace").enabled(globe_enabled).build(handle)?;
+    let zoom_slider_item =
+        CheckMenuItemBuilder::with_id("view-zoom-slider", "Zoom Slider")
+            .enabled(view_enabled)
+            .checked(zoom_slider_enabled)
+            .build(handle)?;
+    let map_trace_item = CheckMenuItemBuilder::with_id("view-map-trace", "Map Trace")
+        .enabled(location_enabled)
+        .checked(map_trace_checked)
+        .build(handle)?;
+    let globe_trace_item = CheckMenuItemBuilder::with_id("view-globe-trace", "Globe Trace")
+        .enabled(globe_enabled)
+        .checked(globe_trace_checked)
+        .build(handle)?;
 
     let view_submenu = SubmenuBuilder::with_id(handle, "view", "View")
         .item(&first_four_item)
@@ -256,6 +283,8 @@ fn build_app_menu(handle: &tauri::AppHandle, state: &AppState) -> tauri::Result<
         .separator()
         .item(&map_trace_item)
         .item(&globe_trace_item)
+        .separator()
+        .item(&zoom_slider_item)
         .build()?;
 
     let app_name = handle
@@ -387,6 +416,36 @@ fn set_globe_enabled(
 }
 
 #[tauri::command]
+fn set_map_trace_checked(
+    checked: bool,
+    app: tauri::AppHandle,
+    state: tauri::State<Arc<AppState>>,
+) -> Result<(), String> {
+    state
+        .map_trace_checked
+        .write()
+        .map(|mut g| *g = checked)
+        .map_err(|e| e.to_string())?;
+    refresh_native_menu(&app, &*state);
+    Ok(())
+}
+
+#[tauri::command]
+fn set_globe_trace_checked(
+    checked: bool,
+    app: tauri::AppHandle,
+    state: tauri::State<Arc<AppState>>,
+) -> Result<(), String> {
+    state
+        .globe_trace_checked
+        .write()
+        .map(|mut g| *g = checked)
+        .map_err(|e| e.to_string())?;
+    refresh_native_menu(&app, &*state);
+    Ok(())
+}
+
+#[tauri::command]
 fn add_recent(
     path: String,
     app: tauri::AppHandle,
@@ -448,6 +507,8 @@ pub fn run() {
             set_view_columns_enabled,
             set_location_enabled,
             set_globe_enabled,
+            set_map_trace_checked,
+            set_globe_trace_checked,
             get_recent_files,
             request_exit,
         ])
@@ -562,14 +623,38 @@ pub fn run() {
                     return;
                 }
                 if id == "view-map-trace" {
+                    if let Some(state) = app_handle.try_state::<Arc<AppState>>() {
+                        if let Ok(mut g) = state.map_trace_checked.write() {
+                            *g = !*g;
+                        }
+                        refresh_native_menu(&app_handle, &state);
+                    }
                     if let Some(w) = app_handle.get_webview_window("main") {
                         let _ = w.emit("view-map-trace", ());
                     }
                     return;
                 }
                 if id == "view-globe-trace" {
+                    if let Some(state) = app_handle.try_state::<Arc<AppState>>() {
+                        if let Ok(mut g) = state.globe_trace_checked.write() {
+                            *g = !*g;
+                        }
+                        refresh_native_menu(&app_handle, &state);
+                    }
                     if let Some(w) = app_handle.get_webview_window("main") {
                         let _ = w.emit("view-globe-trace", ());
+                    }
+                    return;
+                }
+                if id == "view-zoom-slider" {
+                    if let Some(state) = app_handle.try_state::<Arc<AppState>>() {
+                        if let Ok(mut g) = state.zoom_slider_enabled.write() {
+                            *g = !*g;
+                        }
+                        refresh_native_menu(&app_handle, &state);
+                    }
+                    if let Some(w) = app_handle.get_webview_window("main") {
+                        let _ = w.emit("view-toggle-zoom-slider", ());
                     }
                     return;
                 }

@@ -57,6 +57,15 @@ export const CHART_EXPORT_DATA_URL_OPTS = {
   backgroundColor: "#fff",
 } as const;
 
+/** ECharts series id for the playback/current-position highlight dot. */
+export const PLAYBACK_HIGHLIGHT_SERIES_ID = "playback-highlight";
+
+/** Cartesian grid bottom padding (px) used when the zoom slider is not shown. */
+export const CARTESIAN_GRID_BOTTOM_NO_SLIDER = 48;
+
+/** Cartesian grid bottom padding (px) used when the zoom slider is shown. */
+export const CARTESIAN_GRID_BOTTOM_WITH_SLIDER = 72;
+
 /** Special chart selection ID used to render the location trace map. */
 export const MAP_TRACE_SELECTION = "__map_trace__";
 
