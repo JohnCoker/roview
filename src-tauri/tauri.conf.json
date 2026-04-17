@@ -27,7 +27,7 @@
     "targets": "all",
     "publisher": "John Coker <john@jcsw.com>",
     "copyright": "Copyright © 2026 John Coker",
-    "homepage": "https://github.com/JohnCoker/roview",
+    "homepage": "https://johncoker.github.io/roview/",
     "license": "ISC",
     "icon": [
       "icons/32x32.png",

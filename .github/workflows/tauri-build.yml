@@ -25,10 +25,10 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Setup Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v5
         with:
           node-version: "24"
 
@@ -38,8 +38,10 @@ jobs:
       - name: Install system dependencies (macOS)
         if: runner.os == 'macOS'
         run: |
-          brew update
-          brew install pkg-config
+          if ! command -v pkg-config >/dev/null 2>&1; then
+            brew update
+            brew install pkg-config
+          fi
 
       - name: Install system dependencies (Ubuntu)
         if: runner.os == 'Linux'
@@ -67,16 +69,15 @@ jobs:
       # Import Apple cert with a dedicated action (avoids SecKeychainItemImport "parameters not valid" from tauri-action's import)
       - name: Import Apple code signing certificate (macOS, tag builds)
         if: matrix.platform == 'macos-latest' && startsWith(github.ref, 'refs/tags/')
-        uses: apple-actions/import-codesign-certs@v3
+        uses: apple-actions/import-codesign-certs@v6
         with:
           p12-file-base64: ${{ secrets.APPLE_CERTIFICATE }}
           p12-password: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
 
-      # macOS/Linux: tauri-action builds and uploads to release (expects bundle output)
+      # tauri-action builds installers and uploads to the draft release on tag builds (NSIS on Windows, DMG on macOS, AppImage on Linux).
       # Do NOT set APPLE_CERTIFICATE / APPLE_CERTIFICATE_PASSWORD here — cert is already in keychain from the step above.
       # If they are set (even empty), Tauri's bundler runs "security import" and hits SecKeychainItemImport errors.
-      - name: Build Tauri app (macOS/Linux)
-        if: matrix.platform != 'windows-latest'
+      - name: Build Tauri app
         uses: tauri-apps/tauri-action@v0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -89,28 +90,30 @@ jobs:
           releaseName: "Release v__VERSION__"
           releaseDraft: true
           prerelease: false
-          # macOS non-tag: build without signing so CI works without cert
-          args: ${{ matrix.platform == 'macos-latest' && (startsWith(github.ref, 'refs/tags/') && '--bundles app' || '--bundles app --no-sign') || '--bundles appimage' }}
+          # macOS non-tag: build without signing so CI works without cert. DMG (not .app) so CI artifacts are a single native file (upload-artifact archive:false).
+          args: ${{ matrix.platform == 'windows-latest' && '--bundles nsis' || (matrix.platform == 'macos-latest' && (startsWith(github.ref, 'refs/tags/') && '--bundles dmg' || '--bundles dmg --no-sign') || '--bundles appimage') }}
 
-      # Windows: tauri-action only looks for msi/nsis; we want the raw .exe so build and upload manually.
-      # Use the same command locally to reproduce CI: npm run tauri build -- --no-bundle
-      - name: Build Tauri app (Windows)
+      # One installer file per job with archive:false — downloads keep .dmg / .exe / .AppImage instead of a .tar.gz of the whole bundle tree.
+      - name: Upload macOS installer
+        if: matrix.platform == 'macos-latest'
+        uses: actions/upload-artifact@v7
+        with:
+          path: src-tauri/target/release/bundle/dmg/*.dmg
+          archive: false
+          if-no-files-found: error
+
+      - name: Upload Windows installer
         if: matrix.platform == 'windows-latest'
-        run: npm run tauri build -- --no-bundle
-
-      - name: Upload Windows exe to release
-        if: matrix.platform == 'windows-latest' && startsWith(github.ref, 'refs/tags/')
-        uses: softprops/action-gh-release@v2
+        uses: actions/upload-artifact@v7
         with:
-          tag_name: ${{ github.ref_name }}
-          files: |
-            src-tauri/target/release/roview.exe
-          draft: true
-          fail_on_unmatched_files: true
+          path: src-tauri/target/release/bundle/nsis/*.exe
+          archive: false
+          if-no-files-found: error
 
-      # Windows puts output in target/release/; macOS/Linux use target/release/bundle/
-      - name: Upload artifacts
-        uses: actions/upload-artifact@v4
+      - name: Upload Linux AppImage
+        if: matrix.platform == 'ubuntu-latest'
+        uses: actions/upload-artifact@v7
         with:
-          name: roview-${{ matrix.platform == 'macos-latest' && 'macos' || (matrix.platform == 'windows-latest' && 'windows' || 'linux') }}
-          path: ${{ matrix.platform == 'windows-latest' && 'src-tauri/target/release' || 'src-tauri/target/release/bundle' }}
+          path: src-tauri/target/release/bundle/appimage/*.AppImage
+          archive: false
+          if-no-files-found: error

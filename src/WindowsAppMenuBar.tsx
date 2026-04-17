@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState, type CSSProperties } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { emit } from "@tauri-apps/api/event";
 import { getName, getVersion } from "@tauri-apps/api/app";
+import { openUrl } from "@tauri-apps/plugin-opener";
 import {
   Button,
   Dialog,
@@ -10,6 +11,7 @@ import {
   DialogContent,
   DialogSurface,
   DialogTitle,
+  Link,
   Menu,
   MenuDivider,
   MenuItem,
@@ -40,6 +42,9 @@ const menubarTriggerStyle = {
 /** Matches `ABOUT_INTRO` in `src-tauri/src/lib.rs` (AboutMetadata.comments). */
 const ABOUT_INTRO =
   "Desktop app for exploring time-series CSV output produced by RASOrbit.";
+
+/** Matches `bundle.homepage` in `src-tauri/tauri.conf.json` (AboutMetadata.website). */
+const PRODUCT_HOMEPAGE = "https://johncoker.github.io/roview/";
 
 export function isWindowsPlatform(): boolean {
   return typeof navigator !== "undefined" && /Windows/i.test(navigator.userAgent);
@@ -285,6 +290,17 @@ export function WindowsAppMenuBar({
               <Text block style={{ marginTop: tokens.spacingVerticalM }}>
                 {ABOUT_INTRO}
               </Text>
+              <div style={{ marginTop: tokens.spacingVerticalS }}>
+                <Link
+                  href={PRODUCT_HOMEPAGE}
+                  onClick={(e) => {
+                    e.preventDefault();
+                    void openUrl(PRODUCT_HOMEPAGE);
+                  }}
+                >
+                  Product site
+                </Link>
+              </div>
             </DialogContent>
             <DialogActions>
               <Button appearance="primary" onClick={() => setAboutOpen(false)}>

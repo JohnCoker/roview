@@ -1,9 +1,11 @@
 [package]
 name = "roview"
-version = "0.8.0"
+version = "0.8.1"
 description = "RASOrbit Viewer is a desktop app for exploring time‑series CSV output from RASOrbit."
 authors = ["John Coker <john@jcsw.com>"]
 edition = "2021"
+# Used at runtime for About metadata (`CARGO_PKG_HOMEPAGE`). Keep in sync with `bundle.homepage` in `tauri.conf.json`.
+homepage = "https://johncoker.github.io/roview/"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 

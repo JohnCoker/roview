@@ -5,6 +5,7 @@ use std::sync::RwLock;
 use tauri::menu::{AboutMetadata, CheckMenuItemBuilder, Menu, MenuBuilder, MenuItemBuilder, Submenu, SubmenuBuilder};
 use tauri::Emitter;
 use tauri::Manager;
+use tauri_plugin_opener::OpenerExt;
 use tauri_plugin_store::StoreExt;
 
 const MAX_RECENTS: usize = 10;
@@ -105,6 +106,10 @@ fn nonempty_string(opt: &Option<String>) -> Option<String> {
 const ABOUT_INTRO: &str =
     "Desktop app for exploring time-series CSV output produced by RASOrbit.";
 
+/// Matches `bundle.copyright` in `tauri.conf.json` (embed omits `copyright` at runtime).
+#[cfg(not(windows))]
+const ABOUT_COPYRIGHT_FALLBACK: &str = "Copyright © 2026 John Coker";
+
 #[cfg(not(windows))]
 fn about_metadata(handle: &tauri::AppHandle) -> AboutMetadata<'static> {
     let pkg = handle.package_info();
@@ -117,8 +122,24 @@ fn about_metadata(handle: &tauri::AppHandle) -> AboutMetadata<'static> {
 
     let publisher = nonempty_string(&bundle.publisher)
         .or_else(|| primary_cargo_author(pkg.authors));
-    let copyright = nonempty_string(&bundle.copyright);
-    let homepage = nonempty_string(&bundle.homepage);
+    let copyright = nonempty_string(&bundle.copyright).or_else(|| {
+        let c = ABOUT_COPYRIGHT_FALLBACK.trim();
+        if c.is_empty() {
+            None
+        } else {
+            Some(c.to_string())
+        }
+    });
+    // `tauri::generate_context!` embeds `BundleConfig` without `homepage` (see tauri-utils codegen).
+    // Fall back to `[package].homepage` / `CARGO_PKG_HOMEPAGE` so About panels still get the URL.
+    let homepage = nonempty_string(&bundle.homepage).or_else(|| {
+        let h = env!("CARGO_PKG_HOMEPAGE").trim();
+        if h.is_empty() {
+            None
+        } else {
+            Some(h.to_string())
+        }
+    });
     let license = nonempty_string(&bundle.license);
 
     let website_label = homepage.as_ref().map(|url| {
@@ -130,12 +151,16 @@ fn about_metadata(handle: &tauri::AppHandle) -> AboutMetadata<'static> {
     });
 
     #[cfg(target_os = "macos")]
-    let credits = about_macos_credits(&copyright, &publisher, &homepage, &license);
+    let credits = about_macos_credits(ABOUT_INTRO, &homepage, &license);
     #[cfg(not(target_os = "macos"))]
     let credits: Option<String> = None;
 
-    // Windows/Linux About already lists authors, website, copyright; keep comments as description only.
-    let comments = Some(ABOUT_INTRO.to_string());
+    // macOS ignores `comments`; fold the intro into Credits there. GTK/Win use `comments` as the blurb.
+    let comments: Option<String> = if cfg!(target_os = "macos") {
+        None
+    } else {
+        Some(ABOUT_INTRO.to_string())
+    };
 
     AboutMetadata {
         name: Some(name),
@@ -170,44 +195,31 @@ fn about_authors_list(publisher: &Option<String>) -> Option<Vec<String>> {
     Some(vec![p.to_string()])
 }
 
-/// macOS: standard About ignores `authors` / `website` / `license`; `copyright` often doesn’t apply via
-/// muda’s options dict — put copyright + author + URL + license here so they always show in Credits.
+/// macOS: standard About ignores `authors` / `website` / `license` / `comments`. Copyright is passed
+/// separately to AppKit; Credits are plain left-aligned text — keep them short. Use **Help → Product Site…**
+/// for a proper browser link.
 #[cfg(target_os = "macos")]
-fn about_macos_credits(
-    copyright: &Option<String>,
-    publisher: &Option<String>,
-    homepage: &Option<String>,
-    license: &Option<String>,
-) -> Option<String> {
-    let mut lines: Vec<String> = Vec::new();
-    if let Some(c) = copyright {
-        let t = c.trim();
-        if !t.is_empty() {
-            lines.push(t.to_string());
-        }
-    }
-    if let Some(p) = publisher {
-        let t = p.trim();
-        if !t.is_empty() {
-            lines.push(t.to_string());
-        }
-    }
+fn about_macos_credits(intro: &str, homepage: &Option<String>, license: &Option<String>) -> Option<String> {
+    let intro = intro.trim();
+    let mut detail_lines: Vec<String> = Vec::new();
     if let Some(h) = homepage {
         let t = h.trim();
         if !t.is_empty() {
-            lines.push(t.to_string());
+            detail_lines.push(format!("Website: {}", t));
         }
     }
     if let Some(l) = license {
         let t = l.trim();
         if !t.is_empty() {
-            lines.push(format!("License: {}", t));
+            detail_lines.push(format!("License: {}", t));
         }
     }
-    if lines.is_empty() {
-        None
-    } else {
-        Some(lines.join("\n"))
+    let details = detail_lines.join("\n");
+    match (intro.is_empty(), details.is_empty()) {
+        (true, true) => None,
+        (true, false) => Some(details),
+        (false, true) => Some(intro.to_string()),
+        (false, false) => Some(format!("{}\n\n{}", intro, details)),
     }
 }
 
@@ -293,21 +305,29 @@ fn build_app_menu(handle: &tauri::AppHandle, state: &AppState) -> tauri::Result<
         .clone()
         .unwrap_or_else(|| handle.package_info().name.clone());
     let about_item_text = format!("About {}", app_name);
+    let about_meta = about_metadata(handle);
+    let help_site_item = MenuItemBuilder::with_id("help-product-site", "Product Site…").build(handle)?;
 
     if cfg!(target_os = "macos") {
         let app_submenu = SubmenuBuilder::with_id(handle, "app", &app_name)
-            .about_with_text(&about_item_text, Some(about_metadata(handle)))
+            .about_with_text(&about_item_text, Some(about_meta.clone()))
             .separator()
             .quit_with_text(format!("Quit {}", app_name))
+            .build()?;
+        let help_submenu = SubmenuBuilder::with_id(handle, "help", "Help")
+            .item(&help_site_item)
             .build()?;
         MenuBuilder::new(handle)
             .item(&app_submenu)
             .item(&file_submenu)
             .item(&view_submenu)
+            .item(&help_submenu)
             .build()
     } else {
         let help_submenu = SubmenuBuilder::with_id(handle, "help", "&Help")
-            .about_with_text(&about_item_text, Some(about_metadata(handle)))
+            .item(&help_site_item)
+            .separator()
+            .about_with_text(&about_item_text, Some(about_meta))
             .build()?;
         MenuBuilder::new(handle)
             .item(&file_submenu)
@@ -655,6 +675,13 @@ pub fn run() {
                     }
                     if let Some(w) = app_handle.get_webview_window("main") {
                         let _ = w.emit("view-toggle-zoom-slider", ());
+                    }
+                    return;
+                }
+                if id == "help-product-site" {
+                    let url = env!("CARGO_PKG_HOMEPAGE").trim();
+                    if !url.is_empty() {
+                        let _ = app_handle.opener().open_url(url, None::<&str>);
                     }
                     return;
                 }

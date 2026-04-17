@@ -1,0 +1,7 @@
+theme: jekyll-theme-minimal
+title: RASOrbit Viewer
+logo: /logo.png
+description: A desktop app for exploring time‑series CSV output from RASOrbit.
+
+plugins:
+  - jekyll-github-metadata

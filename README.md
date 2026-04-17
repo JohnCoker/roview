@@ -4,26 +4,7 @@ RASOrbit Viewer is a desktop app (Tauri + React) for exploring time‑series CSV
 It focuses on plotting multiple derived quantities vs. time, with a clean, chart‑centric layout
 and minimal chrome.
 
-## Usage
-
-1. **Launch** the app.
-2. **Open a file**:
-   - Use **File → Open…** in the menu and choose a CSV file, or
-   - Open a CSV via the OS with this application.
-3. **Review warnings**:
-   - If the file has structural issues, a warning banner appears at the top.
-   - If there are errors (e.g. no valid Time column), the app will refuse to open the file.
-4. **Select columns to chart**:
-   - Initially the first three columns are shown.
-   - Use the **View** menu to change the columns displayed.
-5. **Explore the charts**:
-   - Scroll vertically to browse all charts.
-   - Hover over a chart to see the Time and that column’s value at the nearest point.
-6. **Trace the course**:
-   - Use **View → Map Trace** to turn on/off a map of the location over time.
-   - **View → Latitude vs Longitude** adds a line chart with longitude on the horizontal axis and latitude on the vertical.
-7. **Printing / Export**:
-   - Charts and the map can be exported as images using the **File → Export Charts…**.
+Download info and basic usage is on [the intro page](https://johncoker.github.io/roview).
 
 ## Development
 
