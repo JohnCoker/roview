@@ -9,8 +9,7 @@ This is an add-on program to **RASOrbit**; see [rasaero.com](http://www.rasaero.
 
 ## Download
 
-Pre-built files are available for some platforms,
-[latest](https://github.com/johncoker/roview/releases):
+Pre-built files are available for some platforms, [latest](https://github.com/johncoker/roview/releases):
 - [Windows (Intel 64-bit)](https://github.com/johncoker/roview/releases)
 - [macOS (Apple Silicon)](https://github.com/johncoker/roview/releases)
 - [Linux (Intel 64-bit)](https://github.com/johncoker/roview/releases)
