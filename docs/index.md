@@ -35,7 +35,7 @@ Other platforms may be built from [source](https://github.com/johncoker/roview/)
 6. **Trace the course**:
    - Use **View → Map Trace** to turn on/off a map of the location over time.
    - Use **View → Globe Trace** to turn on/off a 3D view of the location around the Earth.
-   - Zoom both charts, pan the map and rotate the globe.
+   - Zoom both charts, pan the map, and rotate the globe.
 7. **Playback status bar**:
    - Watch a moving dot trace the progress on all charts (most interesting for the map and globe).
    - To speed it up, use the combo box to select a higher rate.

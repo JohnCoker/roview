@@ -373,7 +373,6 @@ type GlobeTraceBuiltBundle = {
   maxGlobeAlt: number;
   centerLat: number;
   centerLong: number;
-  globeHighlightAltBump: number;
   globeCols: NonNullable<ReturnType<RunFile["globeColumns"]>>;
 };
 
@@ -410,8 +409,6 @@ const MAP_ZOOM_MAX = 20;
 const GLOBE_DIST_DEFAULT = 200;
 const GLOBE_DIST_MIN = 101;
 const GLOBE_DIST_MAX = 500;
-/** Minimum outward nudge (globe coords) so the playback dot stays in front of the trace in WebGL depth tests. */
-const GLOBE_PLAYBACK_HIGHLIGHT_ALT_BUMP_MIN = 0.35;
 
 /** No tween on highlight updates (2D/geo; avoids lag). Globe also relies on this — see globe option `animation`. */
 const PLAYBACK_HIGHLIGHT_ANIMATION = {
@@ -910,7 +907,6 @@ export const ChartGrid = memo(forwardRef<ChartGridRef, ChartGridProps>(
     const n = points.length;
     const centerLat = n > 0 ? latSum / n : 0;
     const centerLong = n > 0 ? longSum / n : 0;
-    const globeHighlightAltBump = Math.max(GLOBE_PLAYBACK_HIGHLIGHT_ALT_BUMP_MIN, maxGlobeAlt * 0.04);
     const globeCols = runFile.globeColumns();
     if (globeCols == null) return null;
     return {
@@ -919,7 +915,6 @@ export const ChartGrid = memo(forwardRef<ChartGridRef, ChartGridProps>(
       maxGlobeAlt,
       centerLat,
       centerLong,
-      globeHighlightAltBump,
       globeCols,
     };
   }, [globeTraceSelected, timeCol, runFile, timeValues]);
@@ -1175,7 +1170,6 @@ export const ChartGrid = memo(forwardRef<ChartGridRef, ChartGridProps>(
               maxGlobeAlt,
               centerLat,
               centerLong,
-              globeHighlightAltBump,
               globeCols,
             } = globeTraceBuilt;
             const latKind = globeCols.lat.kind();
@@ -1310,7 +1304,7 @@ export const ChartGrid = memo(forwardRef<ChartGridRef, ChartGridProps>(
                     (p) => p.time,
                     (p) => {
                       const [lng, lat, h] = p.value;
-                      return [{ value: [lng, lat, h + globeHighlightAltBump] as [number, number, number] }];
+                      return [{ value: [lng, lat, h] as [number, number, number] }];
                     },
                   ),
                   zlevel: 10,
