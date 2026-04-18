@@ -20,7 +20,7 @@ Other platforms may be built from [source](https://github.com/johncoker/roview/)
 
 1. **Launch** the app.
 2. **Open a file**:
-   - Use **File → Open…** in the menu and choose a CSV file, or
+   - Use **File → Open** in the menu and choose a CSV file, or
    - Open a CSV via the OS with this application.
 3. **Review warnings**:
    - If the file has structural issues, a warning banner appears at the top.
@@ -35,12 +35,13 @@ Other platforms may be built from [source](https://github.com/johncoker/roview/)
 6. **Trace the course**:
    - Use **View → Map Trace** to turn on/off a map of the location over time.
    - Use **View → Globe Trace** to turn on/off a 3D view of the location around the Earth.
+   - Zoom both charts, pan the map and rotate the globe.
 7. **Playback status bar**:
    - Watch a moving dot trace the progress on all charts (most interesting for the map and globe).
    - To speed it up, use the combo box to select a higher rate.
    - To clear the dot, use the stop button.
 8. **Printing / Export**:
-   - Charts and the map can be exported as images using the **File → Export Charts…**
+   - Charts and the map can be exported as images using the **File → Export Charts**
      or right clicking on a single chart.
 
 ## Yadda, yadda

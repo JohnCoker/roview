@@ -14,8 +14,8 @@ import * as echarts from "echarts";
 import type { ECharts } from "echarts";
 import { save as saveDialog, message as showMessage } from "@tauri-apps/plugin-dialog";
 import { writeFile } from "@tauri-apps/plugin-fs";
-import { Text, tokens, Toolbar, ToolbarButton, ToolbarGroup } from "@fluentui/react-components";
-import { Add16Regular, Subtract16Regular, ZoomFit16Regular, MyLocation16Regular } from "@fluentui/react-icons";
+import { Text, tokens, Toolbar, ToolbarButton, ToolbarGroup, Tooltip } from "@fluentui/react-components";
+import { Add16Regular, Subtract16Regular, ZoomFit16Regular } from "@fluentui/react-icons";
 import type { Theme } from "@fluentui/react-theme";
 import type { Col, RunFile } from "./RunFile";
 import { ChartErrorBoundary } from "./ChartErrorBoundary";
@@ -1514,38 +1514,44 @@ export const ChartGrid = memo(forwardRef<ChartGridRef, ChartGridProps>(
                     }}
                   >
                     <ToolbarGroup>
-                      <ToolbarButton
-                        aria-label="Zoom in on map"
-                        icon={<Add16Regular />}
-                        disabled={mapZoomInDisabled}
-                        onClick={() => {
-                          const c = mapChartByKeyRef.current.get(selection.key);
-                          if (!c) return;
-                          const next = adjustMapGeoZoom(c, 1.25);
-                          setMapGeoZoom((prev) => ({ ...prev, [selection.key]: next }));
-                        }}
-                      />
-                      <ToolbarButton
-                        aria-label="Zoom out on map"
-                        icon={<Subtract16Regular />}
-                        disabled={mapZoomOutDisabled}
-                        onClick={() => {
-                          const c = mapChartByKeyRef.current.get(selection.key);
-                          if (!c) return;
-                          const next = adjustMapGeoZoom(c, 1 / 1.25);
-                          setMapGeoZoom((prev) => ({ ...prev, [selection.key]: next }));
-                        }}
-                      />
-                      <ToolbarButton
-                        aria-label="Reset map view"
-                        icon={<ZoomFit16Regular />}
-                        onClick={() => {
-                          const c = mapChartByKeyRef.current.get(selection.key);
-                          if (!c) return;
-                          c.dispatchAction({ type: "restore" });
-                          setMapGeoZoom((prev) => ({ ...prev, [selection.key]: 1 }));
-                        }}
-                      />
+                      <Tooltip content="Zoom in on map" relationship="label">
+                        <ToolbarButton
+                          aria-label="Zoom in on map"
+                          icon={<Add16Regular />}
+                          disabled={mapZoomInDisabled}
+                          onClick={() => {
+                            const c = mapChartByKeyRef.current.get(selection.key);
+                            if (!c) return;
+                            const next = adjustMapGeoZoom(c, 1.25);
+                            setMapGeoZoom((prev) => ({ ...prev, [selection.key]: next }));
+                          }}
+                        />
+                      </Tooltip>
+                      <Tooltip content="Zoom out on map" relationship="label">
+                        <ToolbarButton
+                          aria-label="Zoom out on map"
+                          icon={<Subtract16Regular />}
+                          disabled={mapZoomOutDisabled}
+                          onClick={() => {
+                            const c = mapChartByKeyRef.current.get(selection.key);
+                            if (!c) return;
+                            const next = adjustMapGeoZoom(c, 1 / 1.25);
+                            setMapGeoZoom((prev) => ({ ...prev, [selection.key]: next }));
+                          }}
+                        />
+                      </Tooltip>
+                      <Tooltip content="Reset map view" relationship="label">
+                        <ToolbarButton
+                          aria-label="Reset map view"
+                          icon={<ZoomFit16Regular />}
+                          onClick={() => {
+                            const c = mapChartByKeyRef.current.get(selection.key);
+                            if (!c) return;
+                            c.dispatchAction({ type: "restore" });
+                            setMapGeoZoom((prev) => ({ ...prev, [selection.key]: 1 }));
+                          }}
+                        />
+                      </Tooltip>
                     </ToolbarGroup>
                   </Toolbar>
                 </div>
@@ -1588,38 +1594,44 @@ export const ChartGrid = memo(forwardRef<ChartGridRef, ChartGridProps>(
                     }}
                   >
                     <ToolbarGroup>
-                      <ToolbarButton
-                        aria-label="Zoom in on globe"
-                        icon={<Add16Regular />}
-                        disabled={globeZoomInDisabled}
-                        onClick={() => {
-                          const c = mapChartByKeyRef.current.get(selection.key);
-                          if (!c) return;
-                          const next = adjustGlobeDistance(c, 1 / 1.25);
-                          setGlobeDist((prev) => ({ ...prev, [selection.key]: next }));
-                        }}
-                      />
-                      <ToolbarButton
-                        aria-label="Zoom out on globe"
-                        icon={<Subtract16Regular />}
-                        disabled={globeZoomOutDisabled}
-                        onClick={() => {
-                          const c = mapChartByKeyRef.current.get(selection.key);
-                          if (!c) return;
-                          const next = adjustGlobeDistance(c, 1.25);
-                          setGlobeDist((prev) => ({ ...prev, [selection.key]: next }));
-                        }}
-                      />
-                      <ToolbarButton
-                        aria-label="Reset globe view"
-                        icon={<MyLocation16Regular />}
-                        onClick={() => {
-                          const c = mapChartByKeyRef.current.get(selection.key);
-                          if (!c) return;
-                          c.dispatchAction({ type: "restore" });
-                          setGlobeDist((prev) => ({ ...prev, [selection.key]: GLOBE_DIST_DEFAULT }));
-                        }}
-                      />
+                      <Tooltip content="Zoom in on globe" relationship="label">
+                        <ToolbarButton
+                          aria-label="Zoom in on globe"
+                          icon={<Add16Regular />}
+                          disabled={globeZoomInDisabled}
+                          onClick={() => {
+                            const c = mapChartByKeyRef.current.get(selection.key);
+                            if (!c) return;
+                            const next = adjustGlobeDistance(c, 1 / 1.25);
+                            setGlobeDist((prev) => ({ ...prev, [selection.key]: next }));
+                          }}
+                        />
+                      </Tooltip>
+                      <Tooltip content="Zoom out on globe" relationship="label">
+                        <ToolbarButton
+                          aria-label="Zoom out on globe"
+                          icon={<Subtract16Regular />}
+                          disabled={globeZoomOutDisabled}
+                          onClick={() => {
+                            const c = mapChartByKeyRef.current.get(selection.key);
+                            if (!c) return;
+                            const next = adjustGlobeDistance(c, 1.25);
+                            setGlobeDist((prev) => ({ ...prev, [selection.key]: next }));
+                          }}
+                        />
+                      </Tooltip>
+                      <Tooltip content="Reset globe view" relationship="label">
+                        <ToolbarButton
+                          aria-label="Reset globe view"
+                          icon={<ZoomFit16Regular />}
+                          onClick={() => {
+                            const c = mapChartByKeyRef.current.get(selection.key);
+                            if (!c) return;
+                            c.dispatchAction({ type: "restore" });
+                            setGlobeDist((prev) => ({ ...prev, [selection.key]: GLOBE_DIST_DEFAULT }));
+                          }}
+                        />
+                      </Tooltip>
                     </ToolbarGroup>
                   </Toolbar>
                 </div>
