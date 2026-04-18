@@ -59,8 +59,8 @@ export function LoadedFileView({
   const playStateRef = useRef({ isPlaying, playbackSpeed, isLooping, timeMin, timeMax });
   playStateRef.current = { isPlaying, playbackSpeed, isLooping, timeMin, timeMax };
 
+  /** Driven by RAF while playing; do not mirror React state every render (state is throttled and lags the ref). */
   const currentTimeRef = useRef(currentTime);
-  currentTimeRef.current = currentTime;
 
   const rafRef = useRef<number>(0);
   const lastFrameRef = useRef<number>(0);
@@ -80,19 +80,25 @@ export function LoadedFileView({
       const st = playStateRef.current;
       if (!st.isPlaying) return;
       if (lastFrameRef.current > 0) {
-        const deltaMs = Math.min(now - lastFrameRef.current, 100);
+        const deltaMs = Math.max(0, Math.min(now - lastFrameRef.current, 100));
         const advance = (deltaMs / 1000) * st.playbackSpeed;
         let next = currentTimeRef.current + advance;
+        let hitNonLoopEnd = false;
         if (next >= st.timeMax) {
           if (st.isLooping) {
-            next = st.timeMin + (next - st.timeMax) % (st.timeMax - st.timeMin || 1);
+            const span = st.timeMax - st.timeMin || 1;
+            next = st.timeMin + ((next - st.timeMin) % span + span) % span;
           } else {
             next = st.timeMax;
+            hitNonLoopEnd = true;
             setIsPlaying(false);
           }
         }
         currentTimeRef.current = next;
-        if (now - lastStateUpdateRef.current >= STATE_UPDATE_INTERVAL_MS) {
+        const shouldFlushUi =
+          hitNonLoopEnd ||
+          now - lastStateUpdateRef.current >= STATE_UPDATE_INTERVAL_MS;
+        if (shouldFlushUi) {
           setCurrentTime(next);
           lastStateUpdateRef.current = now;
         }
@@ -107,6 +113,7 @@ export function LoadedFileView({
   }, [isPlaying]);
 
   useEffect(() => {
+    currentTimeRef.current = timeMin;
     setCurrentTime(timeMin);
     setIsPlaying(false);
     setPlaybackActive(false);
@@ -122,15 +129,24 @@ export function LoadedFileView({
 
   const togglePlay = useCallback(() => {
     setPlaybackActive(true);
-    setCurrentTime((t) => {
-      if (t >= timeMax) return timeMin;
-      return t;
-    });
-    setIsPlaying((p) => !p);
+    const wasPlaying = playStateRef.current.isPlaying;
+    if (!wasPlaying) {
+      // RAF advances `currentTimeRef`; React state can lag. Starting play must reset the ref
+      // when we're at the end, or the next tick continues from timeMax and stops immediately.
+      const atEnd = currentTimeRef.current >= timeMax - 1e-9;
+      if (atEnd) {
+        currentTimeRef.current = timeMin;
+        setCurrentTime(timeMin);
+      } else {
+        setCurrentTime((t) => (t >= timeMax - 1e-9 ? timeMin : t));
+      }
+    }
+    setIsPlaying(!wasPlaying);
   }, [timeMin, timeMax]);
   const resetPlayback = useCallback(() => {
     setPlaybackActive(true);
     setIsPlaying(false);
+    currentTimeRef.current = timeMin;
     setCurrentTime(timeMin);
   }, [timeMin]);
   const toggleLoop = useCallback(() => {
@@ -140,14 +156,12 @@ export function LoadedFileView({
       return !prev;
     });
   }, []);
-  const handleScrub = useCallback(
-    (time: number) => {
-      setPlaybackActive(true);
-      setIsPlaying(false);
-      setCurrentTime(time);
-    },
-    [],
-  );
+  const handleScrub = useCallback((time: number) => {
+    setPlaybackActive(true);
+    setIsPlaying(false);
+    currentTimeRef.current = time;
+    setCurrentTime(time);
+  }, []);
 
   const hasPlaybackBar = timeCol != null && selectedColumns.length > 0;
   useEffect(() => {
