@@ -4,6 +4,7 @@ import { FluentProvider, webDarkTheme, webLightTheme } from "@fluentui/react-com
 import { setTheme } from "@tauri-apps/api/app";
 import { getCurrentWebviewWindow } from "@tauri-apps/api/webviewWindow";
 import App from "./App";
+import { VersionCheckDialog } from "./VersionCheckDialog";
 
 function isWindowsPlatform(): boolean {
   return typeof navigator !== "undefined" && /Windows/i.test(navigator.userAgent);
@@ -57,6 +58,7 @@ function Root() {
   return (
     <FluentProvider theme={theme}>
       <App theme={theme} />
+      <VersionCheckDialog />
     </FluentProvider>
   );
 }

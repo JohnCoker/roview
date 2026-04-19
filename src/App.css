@@ -17,8 +17,12 @@ body {
   overflow: hidden;
 }
 
-/* Centered prompt only when no file is open */
-.container--empty {
+/* Fills space below the upgrade bar; centers empty prompt or loading spinner only. */
+.empty-state-below-bar {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
   justify-content: center;
   text-align: center;
 }

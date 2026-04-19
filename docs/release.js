@@ -1,3 +1,4 @@
+// find latest release, update version number, and point download links to build artifacts
 fetch('https://api.github.com/repos/johncoker/roview/releases')
   .then(res => res.json())
   .then(data => {
@@ -12,12 +13,12 @@ fetch('https://api.github.com/repos/johncoker/roview/releases')
     latest.assets.forEach(asset => {
       const url = asset.browser_download_url;
       let prefix;
-      if (/\.dmg$/.test(url)) {
+      if (/\.(exe|msi)$/.test(url)) {
+        prefix = 'Windows';
+      } else if (/\.dmg$/.test(url)) {
         prefix = 'macOS';
       } else if (/\.AppImage$/.test(url)) {
         prefix = 'Linux';
-      } else if (/\.(exe|msi)$/.test(url)) {
-        prefix = 'Windows';
       }
       if (prefix) {
         link = links.find(a => a.text.startsWith(prefix));

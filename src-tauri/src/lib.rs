@@ -9,7 +9,11 @@ use tauri_plugin_opener::OpenerExt;
 use tauri_plugin_store::StoreExt;
 
 const MAX_RECENTS: usize = 10;
-const RECENTS_STORE_PATH: &str = "recents.json";
+/// Single app store file (relative id for `tauri-plugin-store`): recents, flags, etc.
+const STORE_PATH: &str = "persisted.json";
+/// Pre-release store filename; migrated into [`STORE_PATH`] on first launch when needed.
+const LEGACY_STORE_PATH: &str = "recents.json";
+const STORE_KEY_SUPPRESS_UPGRADE: &str = "suppress_upgrade_notifications";
 
 #[derive(Default)]
 pub struct AppState {
@@ -307,6 +311,8 @@ fn build_app_menu(handle: &tauri::AppHandle, state: &AppState) -> tauri::Result<
     let about_item_text = format!("About {}", app_name);
     let about_meta = about_metadata(handle);
     let help_site_item = MenuItemBuilder::with_id("help-product-site", "Product Site…").build(handle)?;
+    let help_check_version_item =
+        MenuItemBuilder::with_id("help-check-new-version", "Check for Updates…").build(handle)?;
 
     if cfg!(target_os = "macos") {
         let app_submenu = SubmenuBuilder::with_id(handle, "app", &app_name)
@@ -316,6 +322,7 @@ fn build_app_menu(handle: &tauri::AppHandle, state: &AppState) -> tauri::Result<
             .build()?;
         let help_submenu = SubmenuBuilder::with_id(handle, "help", "Help")
             .item(&help_site_item)
+            .item(&help_check_version_item)
             .build()?;
         MenuBuilder::new(handle)
             .item(&app_submenu)
@@ -326,6 +333,7 @@ fn build_app_menu(handle: &tauri::AppHandle, state: &AppState) -> tauri::Result<
     } else {
         let help_submenu = SubmenuBuilder::with_id(handle, "help", "&Help")
             .item(&help_site_item)
+            .item(&help_check_version_item)
             .separator()
             .about_with_text(&about_item_text, Some(about_meta))
             .build()?;
@@ -337,8 +345,33 @@ fn build_app_menu(handle: &tauri::AppHandle, state: &AppState) -> tauri::Result<
     }
 }
 
+/// One-time copy from [`LEGACY_STORE_PATH`] when [`STORE_PATH`] has no `recents` key yet.
+fn migrate_legacy_store_to_persisted(app: &tauri::AppHandle) {
+    let Ok(store) = app.store(STORE_PATH) else {
+        return;
+    };
+    if store.get("recents").is_some() {
+        return;
+    }
+    let Ok(legacy) = app.store(LEGACY_STORE_PATH) else {
+        return;
+    };
+    let mut touched = false;
+    if let Some(v) = legacy.get("recents") {
+        let _ = store.set("recents".to_string(), v.clone());
+        touched = true;
+    }
+    if let Some(v) = legacy.get(STORE_KEY_SUPPRESS_UPGRADE) {
+        let _ = store.set(STORE_KEY_SUPPRESS_UPGRADE.to_string(), v.clone());
+        touched = true;
+    }
+    if touched {
+        let _ = store.save();
+    }
+}
+
 fn load_recents_from_store(app: &tauri::AppHandle) -> Vec<PathBuf> {
-    let store = match app.store(RECENTS_STORE_PATH) {
+    let store = match app.store(STORE_PATH) {
         Ok(s) => s,
         Err(_) => return Vec::new(),
     };
@@ -357,13 +390,46 @@ fn save_recents_to_store(
     app: &tauri::AppHandle,
     paths: &[PathBuf],
 ) -> Result<(), tauri_plugin_store::Error> {
-    let store = app.store(RECENTS_STORE_PATH)?;
+    let store = app.store(STORE_PATH)?;
     let arr: Vec<String> = paths
         .iter()
         .map(|p| p.to_string_lossy().into_owned())
         .collect();
     store.set("recents".to_string(), serde_json::to_value(arr).unwrap_or_default());
     store.save()
+}
+
+fn load_suppress_upgrade_notifications(app: &tauri::AppHandle) -> bool {
+    let store = match app.store(STORE_PATH) {
+        Ok(s) => s,
+        Err(_) => return false,
+    };
+    let Some(value) = store.get(STORE_KEY_SUPPRESS_UPGRADE) else {
+        return false;
+    };
+    serde_json::from_value::<bool>(value.clone()).unwrap_or(false)
+}
+
+fn save_suppress_upgrade_notifications(
+    app: &tauri::AppHandle,
+    suppressed: bool,
+) -> Result<(), tauri_plugin_store::Error> {
+    let store = app.store(STORE_PATH)?;
+    store.set(
+        STORE_KEY_SUPPRESS_UPGRADE.to_string(),
+        serde_json::Value::Bool(suppressed),
+    );
+    store.save()
+}
+
+#[tauri::command]
+fn get_suppress_upgrade_notifications(app: tauri::AppHandle) -> Result<bool, String> {
+    Ok(load_suppress_upgrade_notifications(&app))
+}
+
+#[tauri::command]
+fn set_suppress_upgrade_notifications(app: tauri::AppHandle, suppressed: bool) -> Result<(), String> {
+    save_suppress_upgrade_notifications(&app, suppressed).map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -530,9 +596,12 @@ pub fn run() {
             set_map_trace_checked,
             set_globe_trace_checked,
             get_recent_files,
+            get_suppress_upgrade_notifications,
+            set_suppress_upgrade_notifications,
             request_exit,
         ])
         .setup(move |app| {
+            migrate_legacy_store_to_persisted(app.handle());
             // Load persistent recents into state
             let loaded = load_recents_from_store(app.handle());
             if !loaded.is_empty() {
@@ -682,6 +751,12 @@ pub fn run() {
                     let url = env!("CARGO_PKG_HOMEPAGE").trim();
                     if !url.is_empty() {
                         let _ = app_handle.opener().open_url(url, None::<&str>);
+                    }
+                    return;
+                }
+                if id == "help-check-new-version" {
+                    if let Some(w) = app_handle.get_webview_window("main") {
+                        let _ = w.emit("check-for-new-version", ());
                     }
                     return;
                 }

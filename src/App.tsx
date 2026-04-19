@@ -9,6 +9,7 @@ import { RunFile, Problem } from "./RunFile";
 import { LoadedFileView } from "./LoadedFileView";
 import { UiErrorBoundary } from "./UiErrorBoundary";
 import { isWindowsPlatform, WindowsAppMenuBar } from "./WindowsAppMenuBar";
+import { UpgradeNotificationBar } from "./UpgradeNotificationBar";
 import { MAP_TRACE_SELECTION, GLOBE_TRACE_SELECTION } from "./util";
 import "./App.css";
 
@@ -195,6 +196,8 @@ function App({ theme }: AppProps) {
     />
   ) : null;
 
+  const upgradeBar = <UpgradeNotificationBar />;
+
   const shellStyle = {
     display: "flex" as const,
     flexDirection: "column" as const,
@@ -229,28 +232,27 @@ function App({ theme }: AppProps) {
     if (!showWindowsMenu) {
       return (
         <main
-          className="container container--empty"
+          className="container"
           style={{
             backgroundColor: theme.colorNeutralBackground1,
             color: theme.colorNeutralForeground1,
           }}
         >
-          <p>Use File → Open… or open a CSV via the system.</p>
+          {upgradeBar}
+          <div className="empty-state-below-bar">
+            <p>Use File → Open… or open a CSV via the system.</p>
+          </div>
         </main>
       );
     }
     return (
       <div style={shellStyle}>
         {windowsMenuProps}
-        <main
-          className="container container--empty"
-          style={{
-            ...mainFlexStyle,
-            justifyContent: "center",
-            textAlign: "center",
-          }}
-        >
-          <p>Use File → Open… or open a CSV via the system.</p>
+        {upgradeBar}
+        <main className="container" style={mainFlexStyle}>
+          <div className="empty-state-below-bar">
+            <p>Use File → Open… or open a CSV via the system.</p>
+          </div>
         </main>
       </div>
     );
@@ -266,6 +268,7 @@ function App({ theme }: AppProps) {
             color: theme.colorNeutralForeground1,
           }}
         >
+          {upgradeBar}
           <p className="load-error">{loadError}</p>
         </main>
       );
@@ -273,6 +276,7 @@ function App({ theme }: AppProps) {
     return (
       <div style={shellStyle}>
         {windowsMenuProps}
+        {upgradeBar}
         <main className="container" style={mainFlexStyle}>
           <p className="load-error">{loadError}</p>
         </main>
@@ -284,7 +288,7 @@ function App({ theme }: AppProps) {
     if (!showWindowsMenu) {
       return (
         <main
-          className="container container--empty"
+          className="container"
           style={{
             backgroundColor: theme.colorNeutralBackground1,
             color: theme.colorNeutralForeground1,
@@ -292,6 +296,7 @@ function App({ theme }: AppProps) {
           aria-busy="true"
           aria-live="polite"
         >
+          {upgradeBar}
           <div style={loadingStyle}>
             <Spinner size="large" label="Opening file…" />
             <Text size={300}>Parsing CSV…</Text>
@@ -302,12 +307,8 @@ function App({ theme }: AppProps) {
     return (
       <div style={shellStyle}>
         {windowsMenuProps}
-        <main
-          className="container container--empty"
-          style={mainFlexStyle}
-          aria-busy="true"
-          aria-live="polite"
-        >
+        {upgradeBar}
+        <main className="container" style={mainFlexStyle} aria-busy="true" aria-live="polite">
           <div style={loadingStyle}>
             <Spinner size="large" label="Opening file…" />
             <Text size={300}>Parsing CSV…</Text>
@@ -318,7 +319,14 @@ function App({ theme }: AppProps) {
   }
 
   if (!runFile) {
-    return showWindowsMenu ? <div style={shellStyle}>{windowsMenuProps}</div> : null;
+    return showWindowsMenu ? (
+      <div style={shellStyle}>
+        {windowsMenuProps}
+        {upgradeBar}
+      </div>
+    ) : (
+      upgradeBar
+    );
   }
 
   if (!showWindowsMenu) {
@@ -330,6 +338,7 @@ function App({ theme }: AppProps) {
           color: theme.colorNeutralForeground1,
         }}
       >
+        {upgradeBar}
         {problems && problems.length > 0 && showWarnings && (
           <div
             className="warning-banner"
@@ -372,6 +381,7 @@ function App({ theme }: AppProps) {
   return (
     <div style={shellStyle}>
       {windowsMenuProps}
+      {upgradeBar}
       <main className="container" style={mainFlexStyle}>
       {problems && problems.length > 0 && showWarnings && (
         <div

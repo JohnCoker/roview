@@ -23,6 +23,7 @@ import {
 } from "@fluentui/react-components";
 import type { MenuOpenChangeData, MenuOpenEvent } from "@fluentui/react-components";
 import type { Theme } from "@fluentui/react-theme";
+import { PRODUCT_HOMEPAGE } from "./productSite";
 
 type BarMenuId = "file" | "view" | "help";
 
@@ -42,9 +43,6 @@ const menubarTriggerStyle = {
 /** Matches `ABOUT_INTRO` in `src-tauri/src/lib.rs` (AboutMetadata.comments). */
 const ABOUT_INTRO =
   "Desktop app for exploring time-series CSV output produced by RASOrbit.";
-
-/** Matches `bundle.homepage` in `src-tauri/tauri.conf.json` (AboutMetadata.website). */
-const PRODUCT_HOMEPAGE = "https://johncoker.github.io/roview/";
 
 export function isWindowsPlatform(): boolean {
   return typeof navigator !== "undefined" && /Windows/i.test(navigator.userAgent);
@@ -269,6 +267,20 @@ export function WindowsAppMenuBar({
           </MenuTrigger>
           <MenuPopover>
             <MenuList>
+              <MenuItem
+                onClick={() => {
+                  void openUrl(PRODUCT_HOMEPAGE);
+                }}
+              >
+                Product Site…
+              </MenuItem>
+              <MenuItem
+                onClick={() => {
+                  void emit("check-for-new-version", undefined);
+                }}
+              >
+                Check for Updates…
+              </MenuItem>
               <MenuItem
                 onClick={() => {
                   void openAbout();
