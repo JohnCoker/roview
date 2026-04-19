@@ -74,6 +74,11 @@ jobs:
           p12-file-base64: ${{ secrets.APPLE_CERTIFICATE }}
           p12-password: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
 
+      # Azure signing interface
+      - name: Install Trusted Signing CLI
+        if: matrix.platform == 'windows-latest'
+        run: cargo install trusted-signing-cli
+
       # tauri-action builds installers and uploads to the draft release on tag builds (NSIS on Windows, DMG on macOS, AppImage on Linux).
       # Do NOT set APPLE_CERTIFICATE / APPLE_CERTIFICATE_PASSWORD here — cert is already in keychain from the step above.
       # If they are set (even empty), Tauri's bundler runs "security import" and hits SecKeychainItemImport errors.
@@ -85,6 +90,9 @@ jobs:
           APPLE_ID: ${{ secrets.APPLE_ID }}
           APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
+          AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
+          AZURE_CLIENT_SECRET: ${{ secrets.AZURE_CLIENT_SECRET }}
         with:
           tagName: v__VERSION__
           releaseName: "Release v__VERSION__"

@@ -38,6 +38,17 @@
     ],
     "macOS": {
       "entitlements": "./entitlements.plist"
+    },
+    "windows": {
+      "signCommand": {
+        "cmd": "trusted-signing-cli",
+        "args": [
+          "-e", "https://wus.codesigning.azure.net",
+          "-a", "JCSW",
+          "-c", "AppSigning",
+          "%1"
+        ]
+      }
     }
   }
 }
