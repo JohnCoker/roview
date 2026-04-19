@@ -1,6 +1,26 @@
 import { inferSchema, initParser } from "udsv";
 import { formatVal, range } from "./util";
 
+function stripLeadingBOM(s: string): string {
+  return s.charCodeAt(0) === 0xfeff ? s.slice(1) : s;
+}
+
+/**
+ * uDSV's inferSchema assumes the first row ends with a line break; empty or whitespace-only
+ * input, and a single line with no trailing newline, make its internal match null and throw.
+ * Returns null when there is no meaningful CSV text to parse.
+ */
+function prepareCsvTextForUdsv(csvContent: string): string | null {
+  let text = stripLeadingBOM(csvContent);
+  if (text.trim() === "") {
+    return null;
+  }
+  if (!/\r|\n/.test(text)) {
+    text += "\n";
+  }
+  return text;
+}
+
 /**
  * One row of numeric CSV data.
  *
@@ -153,7 +173,13 @@ export class RunFile {
 
   constructor(path: string, csvContent: string) {
     this.path = path;
-    const schema = inferSchema(csvContent, { trim: true });
+    const text = prepareCsvTextForUdsv(csvContent);
+    if (text === null) {
+      this.rows = [];
+      this.columns = [];
+      return;
+    }
+    const schema = inferSchema(text, { trim: true });
     // We expect numeric-only data; override inference to prevent Date/JSON/boolean parsing.
     for (const c of schema.cols) {
       c.type = "n";
@@ -162,7 +188,7 @@ export class RunFile {
       c.repl.NaN = null;
     }
     const parser = initParser(schema);
-    const raw = parser.typedObjs(csvContent) as Record<string, unknown>[];
+    const raw = parser.typedObjs(text) as Record<string, unknown>[];
     const columnNames = schema.cols.map((c) => c.name);
     this.rows = raw.map((row) => toNumericRow(row, columnNames));
     this.columns = computeColStats(columnNames, this.rows);

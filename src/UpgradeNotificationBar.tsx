@@ -64,7 +64,7 @@ export function UpgradeNotificationBar() {
 
   const body = formatNewerReleaseMessage(newer.latest, newer.current);
 
-  /** Keep in sync with `.chart-grid-scroll` horizontal padding in `App.css`. */
+  /** Keep in sync with `.chart-grid-scroll` horizontal padding in `App.css` and `FileWarningsMessageBar`. */
   const chartGutter = "0.5rem";
 
   return (

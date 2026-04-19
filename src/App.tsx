@@ -3,12 +3,13 @@ import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { open as openDialog, message as showDialogMessage } from "@tauri-apps/plugin-dialog";
 import { readTextFile } from "@tauri-apps/plugin-fs";
-import { Button, Spinner, Text, tokens } from "@fluentui/react-components";
+import { Spinner, Text, tokens } from "@fluentui/react-components";
 import type { Theme } from "@fluentui/react-theme";
 import { RunFile, Problem } from "./RunFile";
 import { LoadedFileView } from "./LoadedFileView";
 import { UiErrorBoundary } from "./UiErrorBoundary";
 import { isWindowsPlatform, WindowsAppMenuBar } from "./WindowsAppMenuBar";
+import { FileWarningsMessageBar } from "./FileWarningsMessageBar";
 import { UpgradeNotificationBar } from "./UpgradeNotificationBar";
 import { MAP_TRACE_SELECTION, GLOBE_TRACE_SELECTION } from "./util";
 import "./App.css";
@@ -17,10 +18,13 @@ export interface AppProps {
   theme: Theme;
 }
 
+function formatLoadFailureMessage(err: unknown): string {
+  return err instanceof Error ? err.message : String(err);
+}
+
 function App({ theme }: AppProps) {
   const [currentFilePath, setCurrentFilePath] = useState<string | null>(null);
   const [runFile, setRunFile] = useState<RunFile | null>(null);
-  const [loadError, setLoadError] = useState<string | null>(null);
   const [problems, setProblems] = useState<Problem[] | null>(null);
   const [showWarnings, setShowWarnings] = useState(true);
   const [selectedColumns, setSelectedColumns] = useState<string[]>([]);
@@ -47,12 +51,10 @@ function App({ theme }: AppProps) {
     if (!currentFilePath) {
       setRunFile(null);
       setProblems(null);
-      setLoadError(null);
       setIsReadingFile(false);
       return;
     }
 
-    setLoadError(null);
     setProblems(null);
     setShowWarnings(true);
     setIsReadingFile(true);
@@ -81,15 +83,25 @@ function App({ theme }: AppProps) {
           }
 
           setRunFile(run);
+        } catch (err: unknown) {
+          await showDialogMessage(formatLoadFailureMessage(err), {
+            title: "Cannot open file",
+            kind: "error",
+          });
+          setRunFile(null);
+          setProblems(null);
         } finally {
           setIsReadingFile(false);
         }
       })
-      .catch((err: unknown) => {
+      .catch(async (err: unknown) => {
         setIsReadingFile(false);
         setRunFile(null);
         setProblems(null);
-        setLoadError(err instanceof Error ? err.message : String(err));
+        await showDialogMessage(formatLoadFailureMessage(err), {
+          title: "Cannot open file",
+          kind: "error",
+        });
       });
   }, [currentFilePath]);
 
@@ -180,7 +192,7 @@ function App({ theme }: AppProps) {
   const isEmpty = !currentFilePath;
   const openingFile = isReadingFile;
   const showWindowsMenu = isWindowsPlatform();
-  const viewCommandsEnabled = !!runFile && !loadError && !openingFile;
+  const viewCommandsEnabled = !!runFile && !openingFile;
   const exportEnabled = viewCommandsEnabled && selectedColumns.length > 0;
   const locationEnabled = viewCommandsEnabled && runFile?.locationColumns() != null;
   const globeEnabled = viewCommandsEnabled && runFile?.globeColumns() != null;
@@ -197,6 +209,8 @@ function App({ theme }: AppProps) {
   ) : null;
 
   const upgradeBar = <UpgradeNotificationBar />;
+
+  const fileProblemMessages = problems?.map((p) => p.message) ?? [];
 
   const shellStyle = {
     display: "flex" as const,
@@ -258,32 +272,6 @@ function App({ theme }: AppProps) {
     );
   }
 
-  if (loadError) {
-    if (!showWindowsMenu) {
-      return (
-        <main
-          className="container"
-          style={{
-            backgroundColor: theme.colorNeutralBackground1,
-            color: theme.colorNeutralForeground1,
-          }}
-        >
-          {upgradeBar}
-          <p className="load-error">{loadError}</p>
-        </main>
-      );
-    }
-    return (
-      <div style={shellStyle}>
-        {windowsMenuProps}
-        {upgradeBar}
-        <main className="container" style={mainFlexStyle}>
-          <p className="load-error">{loadError}</p>
-        </main>
-      </div>
-    );
-  }
-
   if (openingFile) {
     if (!showWindowsMenu) {
       return (
@@ -339,32 +327,10 @@ function App({ theme }: AppProps) {
         }}
       >
         {upgradeBar}
-        {problems && problems.length > 0 && showWarnings && (
-          <div
-            className="warning-banner"
-            style={{
-              padding: "12px 16px",
-              borderRadius: tokens.borderRadiusLarge,
-              border: `1px solid ${tokens.colorPaletteYellowBorder1}`,
-              backgroundColor: tokens.colorPaletteYellowBackground2,
-              color: tokens.colorNeutralForeground1,
-            }}
-          >
-            <div style={{ display: "flex", alignItems: "start", justifyContent: "space-between", gap: 12 }}>
-              <div>
-                <div style={{ fontWeight: 600, marginBottom: 4 }}>Warnings for this file</div>
-                <ul className="warning-banner-list">
-                  {problems.map((p, idx) => (
-                    <li key={idx}>{p.message}</li>
-                  ))}
-                </ul>
-              </div>
-              <Button appearance="subtle" onClick={() => setShowWarnings(false)} aria-label="Dismiss warnings">
-                ×
-              </Button>
-            </div>
-          </div>
-        )}
+        <FileWarningsMessageBar
+          messages={showWarnings ? fileProblemMessages : []}
+          onDismiss={() => setShowWarnings(false)}
+        />
         <UiErrorBoundary key={runFile.path} theme={theme}>
           <LoadedFileView
             runFile={runFile}
@@ -383,32 +349,10 @@ function App({ theme }: AppProps) {
       {windowsMenuProps}
       {upgradeBar}
       <main className="container" style={mainFlexStyle}>
-      {problems && problems.length > 0 && showWarnings && (
-        <div
-          className="warning-banner"
-          style={{
-            padding: "12px 16px",
-            borderRadius: tokens.borderRadiusLarge,
-            border: `1px solid ${tokens.colorPaletteYellowBorder1}`,
-            backgroundColor: tokens.colorPaletteYellowBackground2,
-            color: tokens.colorNeutralForeground1,
-          }}
-        >
-          <div style={{ display: "flex", alignItems: "start", justifyContent: "space-between", gap: 12 }}>
-            <div>
-              <div style={{ fontWeight: 600, marginBottom: 4 }}>Warnings for this file</div>
-              <ul className="warning-banner-list">
-                {problems.map((p, idx) => (
-                  <li key={idx}>{p.message}</li>
-                ))}
-              </ul>
-            </div>
-            <Button appearance="subtle" onClick={() => setShowWarnings(false)} aria-label="Dismiss warnings">
-              ×
-            </Button>
-          </div>
-        </div>
-      )}
+        <FileWarningsMessageBar
+          messages={showWarnings ? fileProblemMessages : []}
+          onDismiss={() => setShowWarnings(false)}
+        />
         <UiErrorBoundary key={runFile.path} theme={theme}>
           <LoadedFileView
             runFile={runFile}

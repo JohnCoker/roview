@@ -27,20 +27,6 @@ body {
   text-align: center;
 }
 
-/* Load error and warning banner */
-.load-error {
-  margin: 1rem;
-}
-
-.warning-banner {
-  margin: 0 1rem 1rem;
-}
-
-.warning-banner-list {
-  margin: 0.5em 0 0;
-  padding-left: 1.25em;
-}
-
 /* Chart grid – only this area scrolls */
 /* Suppress browser-like selection in chart area and overlays */
 .chart-grid-scroll,
