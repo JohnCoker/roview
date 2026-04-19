@@ -5,25 +5,19 @@ import { getName, getVersion } from "@tauri-apps/api/app";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import {
   Button,
-  Dialog,
-  DialogActions,
-  DialogBody,
-  DialogContent,
-  DialogSurface,
-  DialogTitle,
-  Link,
   Menu,
   MenuDivider,
   MenuItem,
   MenuList,
   MenuPopover,
   MenuTrigger,
-  Text,
   tokens,
 } from "@fluentui/react-components";
 import type { MenuOpenChangeData, MenuOpenEvent } from "@fluentui/react-components";
 import type { Theme } from "@fluentui/react-theme";
+import { AboutDialog } from "./AboutDialog";
 import { PRODUCT_HOMEPAGE } from "./productSite";
+import appIcon from "./assets/app-icon.png";
 
 type BarMenuId = "file" | "view" | "help";
 
@@ -293,35 +287,16 @@ export function WindowsAppMenuBar({
         </Menu>
       </div>
 
-      <Dialog open={aboutOpen} onOpenChange={(_, d) => setAboutOpen(d.open)}>
-        <DialogSurface>
-          <DialogBody>
-            <DialogTitle>{aboutTitle || "RASOrbit Viewer"}</DialogTitle>
-            <DialogContent>
-              <Text block>Version {aboutVersion}</Text>
-              <Text block style={{ marginTop: tokens.spacingVerticalM }}>
-                {ABOUT_INTRO}
-              </Text>
-              <div style={{ marginTop: tokens.spacingVerticalS }}>
-                <Link
-                  href={PRODUCT_HOMEPAGE}
-                  onClick={(e) => {
-                    e.preventDefault();
-                    void openUrl(PRODUCT_HOMEPAGE);
-                  }}
-                >
-                  Product site
-                </Link>
-              </div>
-            </DialogContent>
-            <DialogActions>
-              <Button appearance="primary" onClick={() => setAboutOpen(false)}>
-                OK
-              </Button>
-            </DialogActions>
-          </DialogBody>
-        </DialogSurface>
-      </Dialog>
+      <AboutDialog
+        open={aboutOpen}
+        onOpenChange={setAboutOpen}
+        title={aboutTitle}
+        version={aboutVersion}
+        intro={ABOUT_INTRO}
+        productHomepage={PRODUCT_HOMEPAGE}
+        icon={<img src={appIcon} width={32} height={32} alt="" style={{ borderRadius: 6 }} />}
+        onOpenProductHomepage={() => void openUrl(PRODUCT_HOMEPAGE)}
+      />
     </>
   );
 }
