@@ -47,7 +47,7 @@ Other platforms may be built from [source](https://github.com/johncoker/roview/)
 ## Yadda, yadda
 
 The author is [John Coker](mailto:john@jcsw.com).
-This program is free software; feel free to use it for personal, educational or commercial missions.
+This app is free software; feel free to use it for personal, educational or commercial missions.
 There is no support and no warranty.
 
 <script src="release.js"></script>
