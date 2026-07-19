@@ -3079,7 +3079,7 @@ dependencies = [
 
 [[package]]
 name = "roview"
-version = "0.8.6"
+version = "1.0.0"
 dependencies = [
  "serde",
  "serde_json",
