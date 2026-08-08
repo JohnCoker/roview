@@ -5,7 +5,7 @@ This is a desktop application for exploring time‑series CSV output from RASOrb
 It focuses on plotting multiple derived quantities vs. time, with a clean, chart‑centric layout
 and minimal chrome.
 
-This is an add-on program to **RASOrbit**; see [rasaero.com](http://www.rasaero.com) for more info.
+This is an add-on program to **RASOrbit**; see [www.rasaero.com](http://www.rasaero.com) for more info.
 
 ## Download
 
