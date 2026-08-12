@@ -13,7 +13,7 @@ fetch('https://api.github.com/repos/johncoker/roview/releases')
     latest.assets.forEach(asset => {
       const url = asset.browser_download_url;
       let prefix;
-      if (/\.(exe|msi)$/.test(url)) {
+      if (/-setup\.(exe|msi)$/.test(url)) {
         prefix = 'Windows';
       } else if (/\.dmg$/.test(url)) {
         prefix = 'macOS';
