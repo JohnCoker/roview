@@ -1,0 +1,9 @@
+RASOrbit License
+----------------
+
+The RASOrbit program is licensed by Rogers Aeroscience ...
+https://rasaero.com/
+
+The RASOrbit Input Editor and Viewer are open source and freely available under the ISC license.
+https://johncoker.github.io/roinput/
+https://johncoker.github.io/roview/
