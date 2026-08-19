@@ -1,0 +1,22 @@
+RASOrbit License
+----------------
+
+The RASOrbit program is licensed by Charles E. Rogers (crogers168@aol.com).
+https://rasaero.com/
+
+The RASOrbit program is Copyright 2027 by Charles E. Rogers.
+
+Permission is granted to download, install, and execute the Software, for personal use and for commercial use, free of charge.
+
+You are not granted any rights to the source code of the Software. You may not reverse engineer, decompile, disassemble, or attempt to derive the source code of the Software.
+
+You may not modify, rent, lease, sell, sublicense, or distribute the Software in executable or any other form without explicit prior written consent from the author.
+
+THE SOFTWARE IS PROVIDED 'AS IS', WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE, AND NONINFRINGEMENT.
+
+IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES, OR OTHER LIABILITY ARISING FROM THE USE OF THE SOFTWARE.
+
+
+The RASOrbit Input Editor and Viewer are open source and freely available under the ISC license.
+https://johncoker.github.io/roinput/
+https://johncoker.github.io/roview/

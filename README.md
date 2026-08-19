@@ -1,7 +1,7 @@
 ## RASOrbit Viewer
 
 RASOrbit Viewer is a desktop app (Tauri + React) for exploring time‑series CSV output from
-[RASOrbit](http://www.rasaero.com).
+[RASOrbit](https://www.rasaero.com).
 It focuses on plotting multiple derived quantities vs. time, with a clean, chart‑centric layout
 and minimal chrome.
 
